@@ -42,3 +42,6 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+#data folder
+data/
