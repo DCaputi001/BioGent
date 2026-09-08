@@ -1,0 +1,61 @@
+# T0 CI tier: fast checks that run on every push/PR, per the tiered approach
+# documented in ARCHITECTURE.md (Development & Deployment Workflow), modeled
+# on corpus's own CI structure.
+#
+# This is a scaffold: services/rag has no code yet (Phase 2), so there's
+# nothing to lint or test against yet. The steps below are placeholders that
+# intentionally succeed today, marking exactly where real steps get added
+# once each service exists. Expand this file incrementally — don't wait
+# until "everything" is ready to make CI meaningful.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Least-privilege by default — this workflow doesn't need to write to the
+# repo or access secrets. Tighten/loosen per-job if that changes later.
+permissions:
+  contents: read
+
+jobs:
+  scaffold-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm repo structure
+        run: |
+          echo "Checking expected top-level structure exists..."
+          test -d services/rag
+          test -d services/data-agent
+          test -d frontend
+          echo "OK — scaffold structure present."
+
+      # --- Placeholder: RAG service lint + tests (fill in during Phase 2) ---
+      # - name: Install uv
+      #   uses: astral-sh/setup-uv@v5
+      # - name: Lint RAG service
+      #   working-directory: services/rag
+      #   run: uv run ruff check .
+      # - name: Test RAG service
+      #   working-directory: services/rag
+      #   env:
+      #     ANTHROPIC_API_KEY: ""   # guard: nothing in the suite should reach a real model
+      #   run: uv run pytest -q
+
+      # --- Placeholder: frontend lint + build (fill in during Phase 4) ---
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: 20
+      # - name: Install frontend deps
+      #   working-directory: frontend
+      #   run: npm ci
+      # - name: Lint frontend
+      #   working-directory: frontend
+      #   run: npm run lint
+      # - name: Build frontend
+      #   working-directory: frontend
+      #   run: npm run build
