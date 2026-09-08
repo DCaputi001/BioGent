@@ -5,14 +5,19 @@ description = "BioGent RAG document-search service"
 requires-python = ">=3.10"
 dependencies = [
     "langchain",
-    "langchain-community",
     "langchain-anthropic",
     "langchain-huggingface",
     "langchain-chroma",
+    "langchain-core",
+    "langchain-text-splitters",
     "chromadb",
     "sentence-transformers",
-    "pypdf",
     "python-dotenv",
+    # Structure-aware PDF parsing + chunking, replacing pypdf +
+    # RecursiveCharacterTextSplitter — see ARCHITECTURE.md
+    # "Document parsing & chunking: Docling + HybridChunker".
+    "docling",
+    "transformers",
 ]
 
 [dependency-groups]

@@ -9,6 +9,7 @@ them per-request if needed.
 
 from pathlib import Path
 
+from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
@@ -17,6 +18,8 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from app import config
+
+load_dotenv()
 
 
 def format_docs(docs: list) -> str:
