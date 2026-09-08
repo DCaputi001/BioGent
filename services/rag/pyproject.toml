@@ -1,0 +1,22 @@
+[project]
+name = "biogent-rag"
+version = "0.1.0"
+description = "BioGent RAG document-search service"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain",
+    "langchain-community",
+    "langchain-anthropic",
+    "langchain-huggingface",
+    "langchain-chroma",
+    "chromadb",
+    "sentence-transformers",
+    "pypdf",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
