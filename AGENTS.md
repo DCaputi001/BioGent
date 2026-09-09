@@ -8,7 +8,7 @@ Orientation for AI coding agents (Claude Code, or any future agent) working in t
 
 BioGent is a production, multi-researcher, web-based platform for scientific/taxonomic literature research. It lets non-technical researchers upload documents and ask grounded questions about them (a RAG document-search service), and eventually hand off datasets to an AI data analyst agent that generates and statistically tests hypotheses (a second, separate service, built later).
 
-**Before proposing any architectural change or new dependency, read `ARCHITECTURE.md` and `PRODUCTION_PLAN.md` first.** Many decisions that might look like open questions have already been made, with reasoning documented. Do not propose:
+**Before proposing any architectural change or new dependency, read `ARCHITECTURE.md` and `PRODUCTION_PLAN.md` first.** Many decisions that might look like open questions have already been made, with reasoning documented. Also check `KNOWN_ISSUES.md` before "fixing" something that looks broken — it may be a deliberately deferred gap with a documented reason and a workaround already in place, not an oversight. Do not propose:
 - OpenAI (or any other) embeddings — Anthropic doesn't provide an embeddings API; the decision on which embedding provider to use for the production system is documented in `ARCHITECTURE.md`.
 - Storing the researcher's Anthropic API key server-side — the BYO-key flow is deliberately client-side only, never persisted server-side. See `ARCHITECTURE.md` → "Key decision: how the LLM gets paid for."
 - SQLite for the production data layer — the decision is PostgreSQL + `pgvector` on RDS, specifically because SQLite handles concurrent multi-user writes poorly.
@@ -28,6 +28,7 @@ BioGent/
 │   └── workflows/         # CI/CD (GitHub Actions)
 ├── ARCHITECTURE.md         # design decisions and reasoning — read this first
 ├── PRODUCTION_PLAN.md      # phased build order with checkpoints
+├── KNOWN_ISSUES.md         # deliberately deferred gaps — check before "fixing" something
 ├── CONTRIBUTING.md         # branching model, PR workflow
 ├── CHANGELOG.md            # running log of changes
 └── README.md               # project summary

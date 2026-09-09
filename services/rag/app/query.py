@@ -1,21 +1,18 @@
 """Query: retrieve relevant chunks and ask Claude, grounded in that context.
 
-Ported from the small learning project's query.py. The chain-building logic
-is unchanged (same LCEL pipeline); what's new is that every setting that was
-a bare constant before now comes from config.py, and build_chain() takes
-parameters so a future caller (e.g. an HTTP endpoint) can override any of
-them per-request if needed.
+Vector storage: Postgres + pgvector, via langchain-postgres's PGVector class
+— same swap as ingest.py. The chain-building logic itself (retrieve ->
+prompt -> Claude -> parse) is unchanged from Step 1; only how the retriever
+connects to the vector store changed.
 """
-
-from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
-from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_postgres import PGVector
 
 from app import config
 
@@ -27,14 +24,20 @@ def format_docs(docs: list) -> str:
 
 
 def build_chain(
-    db_dir: Path = config.DB_DIR,
+    database_url: str = config.DATABASE_URL,
+    collection_name: str = config.COLLECTION_NAME,
     embedding_model: str = config.EMBEDDING_MODEL,
     k: int = config.RETRIEVER_K,
     anthropic_model: str = config.ANTHROPIC_MODEL,
 ):
     """Assemble the retrieve -> prompt -> Claude -> parse chain."""
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
-    db = Chroma(persist_directory=str(db_dir), embedding_function=embeddings)
+    db = PGVector(
+        embeddings=embeddings,
+        connection=database_url,
+        collection_name=collection_name,
+        use_jsonb=True,
+    )
     retriever = db.as_retriever(search_kwargs={"k": k})
 
     prompt = ChatPromptTemplate.from_template(config.PROMPT_TEMPLATE)
