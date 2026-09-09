@@ -1,0 +1,29 @@
+# Local Postgres + pgvector for the RAG service — database only at this
+# stage. The app itself gets its own service added here in Step 3/4, once
+# it has a Dockerfile. Mirrors corpus's own pattern of running its
+# dependency (Grobid, for them) as a docker-compose companion service.
+#
+# Start:  docker compose up -d
+# Stop:   docker compose stop
+# Logs:   docker compose logs -f postgres
+# Reset (wipes all data): docker compose down -v
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-biogent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-biogent}
+      POSTGRES_DB: ${POSTGRES_DB:-biogent_rag}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-biogent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

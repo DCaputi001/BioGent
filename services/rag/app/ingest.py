@@ -1,26 +1,23 @@
 """Ingestion: parse, structure-aware chunk, and embed documents into the vector store.
 
-Replaces pypdf + RecursiveCharacterTextSplitter with Docling (layout-aware PDF
-parsing — headings, sections, tables detected structurally, not by character
-count) + HybridChunker (splits along that structure, sized to the embedding
-model's own tokenizer). See ARCHITECTURE.md — "Document parsing & chunking:
-Docling + HybridChunker" for the full reasoning and the corpus comparison
-this was based on.
+Vector storage: Postgres + pgvector, via langchain-postgres's PGVector class
+— replaces the local Chroma directory used in Step 1. See ARCHITECTURE.md —
+"Data layer: one unified database instead of many" for why.
 
-CAVEAT: Docling's API has moved fast across versions. The chunker
-construction below (HuggingFaceTokenizer wrapping a transformers
-AutoTokenizer) matches the pattern documented in Docling's own examples as of
-this writing, but double-check `docling.chunking` / `docling_core` import
-paths against whatever version `uv sync` actually installs — if either
-import fails, the fix is almost always a renamed module/class in a newer
-release, not a logic error here.
+Chunking: Docling (layout-aware PDF parsing) + HybridChunker (splits along
+that structure, sized to the embedding model's own tokenizer), replacing
+pypdf + RecursiveCharacterTextSplitter. See ARCHITECTURE.md — "Document
+parsing & chunking: Docling + HybridChunker".
+
+CAVEAT: Docling's API has moved fast across versions. If the
+docling.chunking / docling_core import paths below fail, it's almost always
+a renamed module/class in a newer release, not a logic error here.
 
 NOTE: HybridChunker's tokenizer must match the embedding model actually used
 for retrieval — chunk sizes are measured in that model's tokens. Currently
 tokenizer-matched to BAAI/bge-small-en-v1.5 (config.EMBEDDING_MODEL). If the
-embedding model changes (e.g. to BGE-M3 once AWS GPU compute is available —
-see ARCHITECTURE.md open questions), this must be re-paired and the vector
-store rebuilt, same as any other embedding model swap.
+embedding model changes (e.g. to BGE-M3), this must be re-paired and the
+vector store rebuilt, same as any other embedding model swap.
 """
 
 from pathlib import Path
@@ -29,9 +26,9 @@ from dotenv import load_dotenv
 from docling.chunking import HybridChunker
 from docling.document_converter import DocumentConverter
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
-from langchain_chroma import Chroma
 from langchain_core.documents import Document as LCDocument
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer
 
@@ -65,9 +62,9 @@ def load_and_chunk_pdfs(
     """Parse every PDF in data_dir with Docling, chunk with HybridChunker.
 
     Returns plain LangChain Document objects so everything downstream
-    (Chroma, the retriever in query.py) is unchanged by this swap — the
-    change is isolated to how chunks get produced, not how they're stored
-    or searched.
+    (the vector store, the retriever in query.py) is unchanged by this
+    swap — the change is isolated to how chunks get produced, not how
+    they're stored or searched.
     """
     chunker = _build_chunker(embedding_model)
     documents: list[LCDocument] = []
@@ -118,22 +115,47 @@ def load_and_chunk_plaintext(
 
 def build_vector_store(
     chunks: list[LCDocument],
-    db_dir: Path = config.DB_DIR,
+    database_url: str = config.DATABASE_URL,
+    collection_name: str = config.COLLECTION_NAME,
     embedding_model: str = config.EMBEDDING_MODEL,
-) -> Chroma:
-    """Embed chunks and persist them to a local Chroma vector store."""
+    reset: bool = False,
+) -> PGVector:
+    """Embed chunks and add them to the Postgres/pgvector collection.
+
+    By default this is ADDITIVE — existing chunks are kept, new ones are
+    added alongside them, so ingesting one more document doesn't wipe out
+    everything previously ingested. Pass reset=True to wipe the collection
+    first (a full clean rebuild — useful for local dev/testing, or
+    eventually a researcher explicitly clearing their project).
+
+    KNOWN GAP: re-ingesting the exact same file with reset=False will
+    duplicate that file's chunks, since nothing yet tracks "have I already
+    ingested this specific document." See KNOWN_ISSUES.md — proper fix
+    needs per-user document tracking (Phase 8).
+    """
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
-    db = Chroma.from_documents(
-        documents=chunks, embedding=embeddings, persist_directory=str(db_dir)
+    db = PGVector.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        connection=database_url,
+        collection_name=collection_name,
+        use_jsonb=True,
+        pre_delete_collection=reset,
     )
     return db
 
 
 def run_ingestion(
     data_dir: Path = config.DATA_DIR,
-    db_dir: Path = config.DB_DIR,
+    database_url: str = config.DATABASE_URL,
+    collection_name: str = config.COLLECTION_NAME,
+    reset: bool = False,
 ) -> dict:
-    """Full ingestion pipeline. Returns counts for logging/verification."""
+    """Full ingestion pipeline. Returns counts for logging/verification.
+
+    reset=False (default): add to whatever's already in the collection.
+    reset=True: wipe the collection first, then ingest — a clean rebuild.
+    """
     pdf_chunks = load_and_chunk_pdfs(data_dir)
     plaintext_chunks = load_and_chunk_plaintext(data_dir)
     chunks = pdf_chunks + plaintext_chunks
@@ -141,7 +163,9 @@ def run_ingestion(
     if not chunks:
         return {"chunks": 0, "status": "no documents found"}
 
-    build_vector_store(chunks, db_dir=db_dir)
+    build_vector_store(
+        chunks, database_url=database_url, collection_name=collection_name, reset=reset
+    )
     return {
         "pdf_chunks": len(pdf_chunks),
         "plaintext_chunks": len(plaintext_chunks),
@@ -151,5 +175,16 @@ def run_ingestion(
 
 
 if __name__ == "__main__":
-    result = run_ingestion()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Ingest documents into the RAG vector store.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Wipe the collection before ingesting (a full clean rebuild), "
+        "instead of the default additive behavior.",
+    )
+    args = parser.parse_args()
+
+    result = run_ingestion(reset=args.reset)
     print(result)

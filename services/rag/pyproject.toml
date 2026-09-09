@@ -7,17 +7,19 @@ dependencies = [
     "langchain",
     "langchain-anthropic",
     "langchain-huggingface",
-    "langchain-chroma",
     "langchain-core",
     "langchain-text-splitters",
-    "chromadb",
     "sentence-transformers",
     "python-dotenv",
-    # Structure-aware PDF parsing + chunking, replacing pypdf +
-    # RecursiveCharacterTextSplitter — see ARCHITECTURE.md
+    # Structure-aware PDF parsing + chunking — see ARCHITECTURE.md
     # "Document parsing & chunking: Docling + HybridChunker".
     "docling",
     "transformers",
+    # Vector store: Postgres + pgvector — see ARCHITECTURE.md
+    # "Data layer: one unified database instead of many". Replaces
+    # chromadb/langchain-chroma from Step 1.
+    "langchain-postgres",
+    "psycopg[binary]",
 ]
 
 [dependency-groups]
