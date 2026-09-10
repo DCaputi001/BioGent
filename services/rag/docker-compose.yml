@@ -1,12 +1,19 @@
-# Local Postgres + pgvector for the RAG service — database only at this
-# stage. The app itself gets its own service added here in Step 3/4, once
-# it has a Dockerfile. Mirrors corpus's own pattern of running its
-# dependency (Grobid, for them) as a docker-compose companion service.
+# Local Postgres + pgvector, plus the RAG app service itself (Step 4).
 #
-# Start:  docker compose up -d
-# Stop:   docker compose stop
-# Logs:   docker compose logs -f postgres
-# Reset (wipes all data): docker compose down -v
+# NETWORKING NOTE: inside this compose network, containers reach each other
+# by SERVICE NAME, not "localhost". config.py's default RAG_DATABASE_URL
+# points at "localhost:5432", which is correct when running `uv run`
+# directly on your host machine (Step 1-2's workflow) — but from INSIDE the
+# rag container, "localhost" would mean the rag container itself, not the
+# postgres container. That's why the rag service below overrides
+# RAG_DATABASE_URL to use the hostname "postgres" (the service name) instead.
+#
+# Start:               docker compose up -d
+# Run ingestion:        docker compose run --rm rag python -m app.ingest
+# Run ingestion fresh:   docker compose run --rm rag python -m app.ingest --reset
+# Run the query loop:   docker compose run --rm rag python -m app.query
+# Stop:                 docker compose stop
+# Reset (wipes all data, including the model cache): docker compose down -v
 
 services:
   postgres:
@@ -25,5 +32,36 @@ services:
       timeout: 5s
       retries: 5
 
+  rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Overrides config.py's "localhost" default — see NETWORKING NOTE
+      # above. "postgres" here resolves to the postgres service's
+      # container via Docker's internal DNS, not to your host machine.
+      RAG_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-biogent}:${POSTGRES_PASSWORD:-biogent}@postgres:5432/${POSTGRES_DB:-biogent_rag}
+    depends_on:
+      postgres:
+        # Waits for Postgres's healthcheck to pass, not just for the
+        # container to start — Postgres takes a few seconds to actually
+        # accept connections after launching.
+        condition: service_healthy
+    volumes:
+      # Your local data/ folder, mounted into the container so ingestion
+      # can see whatever PDFs/text files you've dropped there — without
+      # this, the container would only see whatever was present at build
+      # time (nothing, since data/ is git-ignored and not copied by the
+      # Dockerfile).
+      - ./data:/app/data
+      # Persists downloaded models (the embedding model, Docling's layout
+      # model, TableFormer, RapidOCR) across container runs. Without this,
+      # EVERY `docker compose run` would re-download everything from
+      # scratch, since a fresh container has no memory of the last one.
+      - hf-cache:/home/appuser/.cache
+
 volumes:
   pgdata:
+  hf-cache:

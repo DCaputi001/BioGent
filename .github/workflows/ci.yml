@@ -2,11 +2,10 @@
 # documented in ARCHITECTURE.md (Development & Deployment Workflow), modeled
 # on corpus's own CI structure.
 #
-# This is a scaffold: services/rag has no code yet (Phase 2), so there's
-# nothing to lint or test against yet. The steps below are placeholders that
-# intentionally succeed today, marking exactly where real steps get added
-# once each service exists. Expand this file incrementally — don't wait
-# until "everything" is ready to make CI meaningful.
+# The frontend block is still a placeholder (nothing exists there yet,
+# Phase 4). The RAG service block is now real — services/rag has actual
+# tests (services/rag/tests/) that need no API key, per the tests-vs-evals
+# split in ARCHITECTURE.md.
 
 name: CI
 
@@ -34,17 +33,31 @@ jobs:
           test -d frontend
           echo "OK — scaffold structure present."
 
-      # --- Placeholder: RAG service lint + tests (fill in during Phase 2) ---
-      # - name: Install uv
-      #   uses: astral-sh/setup-uv@v5
-      # - name: Lint RAG service
-      #   working-directory: services/rag
-      #   run: uv run ruff check .
-      # - name: Test RAG service
-      #   working-directory: services/rag
-      #   env:
-      #     ANTHROPIC_API_KEY: ""   # guard: nothing in the suite should reach a real model
-      #   run: uv run pytest -q
+  rag-service-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/rag
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Run tests (no API key required)
+        env:
+          # Guard: make sure nothing in the suite quietly reaches a real
+          # model — matches the pattern from the reference CI file this
+          # was modeled on. Tests importing app.query/app.ingest should
+          # never actually need a working key to pass.
+          ANTHROPIC_API_KEY: ""
+        run: uv run pytest -q
 
       # --- Placeholder: frontend lint + build (fill in during Phase 4) ---
       # - uses: actions/setup-node@v4

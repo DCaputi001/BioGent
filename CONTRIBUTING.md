@@ -42,6 +42,21 @@ Short, plain-English description of what changed and why, if not obvious. No str
 - Every PR should have a diff worth reviewing — an empty diff (branch identical to `main`) means there's nothing to merge; check `git log` / `git status` before opening one.
 - CI (GitHub Actions) runs automatically on every PR — see `.github/workflows/`. A PR shouldn't be merged with a failing check.
 - Squash or regular merge is fine at this stage; no strict policy yet.
+- **A PR that modifies files under `tests/` deserves extra scrutiny before merging** — especially if it's the *only* thing that changed (no corresponding implementation change). See "Protecting tests" below for why this matters more once AI coding agents are doing real implementation work here.
+
+---
+
+## Protecting tests from being silently weakened
+
+Once AI agents (Claude Code, etc.) are doing real implementation work in this repo, a real failure mode to guard against: an agent hits a failing test, and instead of fixing the underlying code, "fixes" the test instead — loosens an assertion, deletes a case, or changes an expected value to match new (possibly buggy) behavior. This isn't unique to AI agents (people do this too, under deadline pressure), but it's worth having real mechanisms in place, not just a documented rule (`AGENTS.md` states the rule directly; this section is about backing it with something that isn't just a request).
+
+**What's set up so far:**
+- The explicit "don't" rule in `AGENTS.md`'s don't-list, stated as a hard rule with reasoning, not a soft suggestion.
+- Tests are structural and check observable behavior (e.g. "the chunks cover the whole input" rather than "line 47 does X"), which makes them harder to game with a superficial edit without it being obvious in review.
+
+**Worth setting up once the repo has more real history/contributors (not blocking right now):**
+- GitHub branch protection rule requiring review before merge to `main`, specifically so a PR that touches `tests/` can't be self-merged without a second look.
+- A CI check that flags (or blocks) a PR touching only test files with no accompanying source change — a strong signal of exactly the pattern this section is guarding against.
 
 ---
 
