@@ -13,7 +13,7 @@ cases especially are tied to specific source material, not general RAG
 correctness.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

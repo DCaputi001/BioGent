@@ -23,10 +23,10 @@ vector store rebuilt, same as any other embedding model swap.
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
 from docling.chunking import HybridChunker
 from docling.document_converter import DocumentConverter
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+from dotenv import load_dotenv
 from langchain_core.documents import Document as LCDocument
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector

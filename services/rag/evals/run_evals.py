@@ -22,8 +22,8 @@ from pathlib import Path
 # `python -m evals.run_evals` (evals/ is a sibling of app/, not inside it).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.query import ask_with_context  # noqa: E402
-from evals.cases import CASES, EvalCase  # noqa: E402
+from app.query import ask_with_context
+from evals.cases import CASES, EvalCase
 
 REPORTS_DIR = Path(__file__).resolve().parent / "reports"
 

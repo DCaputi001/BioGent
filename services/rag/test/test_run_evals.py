@@ -10,27 +10,27 @@ from evals.run_evals import check_answer_fragment, check_refusal
 
 
 def test_check_refusal_detects_dont_know():
-    passed, detail = check_refusal("I don't know based on the given context.")
+    passed, _detail = check_refusal("I don't know based on the given context.")
     assert passed is True
 
 
 def test_check_refusal_detects_no_information():
-    passed, detail = check_refusal("There is no information about that topic here.")
+    passed, _detail = check_refusal("There is no information about that topic here.")
     assert passed is True
 
 
 def test_check_refusal_fails_on_confident_answer():
-    passed, detail = check_refusal("The capital of Mongolia is Ulaanbaatar.")
+    passed, _detail = check_refusal("The capital of Mongolia is Ulaanbaatar.")
     assert passed is False
 
 
 def test_check_refusal_case_insensitive():
-    passed, detail = check_refusal("I DON'T KNOW the answer to that.")
+    passed, _detail = check_refusal("I DON'T KNOW the answer to that.")
     assert passed is True
 
 
 def test_check_answer_fragment_found():
-    passed, detail = check_answer_fragment(
+    passed, _detail = check_answer_fragment(
         "This accounts for individual vehicle dynamics, including the PU model.",
         expected_fragment="individual vehicle dynamics",
     )
@@ -38,7 +38,7 @@ def test_check_answer_fragment_found():
 
 
 def test_check_answer_fragment_not_found():
-    passed, detail = check_answer_fragment(
+    passed, _detail = check_answer_fragment(
         "This is about something completely unrelated.",
         expected_fragment="individual vehicle dynamics",
     )
@@ -46,7 +46,7 @@ def test_check_answer_fragment_not_found():
 
 
 def test_check_answer_fragment_case_insensitive():
-    passed, detail = check_answer_fragment(
+    passed, _detail = check_answer_fragment(
         "INDIVIDUAL VEHICLE DYNAMICS is the key concept here.",
         expected_fragment="individual vehicle dynamics",
     )
