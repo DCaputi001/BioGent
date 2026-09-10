@@ -20,6 +20,7 @@ embedding model changes (e.g. to BGE-M3), this must be re-paired and the
 vector store rebuilt, same as any other embedding model swap.
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,9 +37,19 @@ from app import config
 
 load_dotenv()
 
-# Reused across calls — Docling's converter loads its layout/table models
-# once; re-instantiating per file would reload them every time.
-_converter = DocumentConverter()
+
+@lru_cache(maxsize=1)
+def _get_converter() -> DocumentConverter:
+    """Lazily create (and cache) Docling's converter.
+
+    Deliberately NOT instantiated at module import time — that would mean
+    just importing this file (e.g. to unit test load_and_chunk_plaintext(),
+    which has nothing to do with Docling) triggers Docling's model loading.
+    lru_cache means the first real call pays that cost once, and every
+    call after reuses the same instance, same as the old module-level
+    approach — just deferred until actually needed.
+    """
+    return DocumentConverter()
 
 
 def _build_chunker(embedding_model: str = config.EMBEDDING_MODEL) -> HybridChunker:
@@ -68,9 +79,10 @@ def load_and_chunk_pdfs(
     """
     chunker = _build_chunker(embedding_model)
     documents: list[LCDocument] = []
+    converter = _get_converter()
 
     for pdf_path in sorted(Path(data_dir).glob("**/*.pdf")):
-        result = _converter.convert(str(pdf_path))
+        result = converter.convert(str(pdf_path))
         docling_doc = result.document
 
         for chunk in chunker.chunk(docling_doc):

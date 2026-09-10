@@ -40,7 +40,17 @@ This is a **monorepo** — one repository for all services and the frontend, not
 
 ## How to run things locally
 
-Not yet applicable — repo is in early scaffolding (see `PRODUCTION_PLAN.md` for current phase). This section will be filled in once `services/rag/` has a working `Dockerfile` and `docker-compose.yml` (Phase 2).
+```powershell
+cd services/rag
+uv sync
+docker compose up -d postgres
+uv run python -m app.ingest        # or: docker compose run --rm rag python -m app.ingest
+uv run python -m app.query
+uv run pytest -q                    # unit tests — fast, no API key needed
+uv run python -m evals.run_evals   # evals — needs a real ANTHROPIC_API_KEY, costs real API calls
+```
+
+`docker compose up -d` (no service name) builds and runs the full app + Postgres stack together. `docker compose build rag` rebuilds just the app image after a code change.
 
 ---
 
@@ -58,6 +68,7 @@ Full detail in `CONTRIBUTING.md`. Quick reference:
 - Never touch RDS credentials directly in code — use AWS Secrets Manager once that layer exists (Phase 3).
 - Never hardcode an Anthropic API key anywhere in the app as a "convenience" bypass of the BYO-key flow — this breaks the core cost-model decision for this project.
 - Never commit real research documents or datasets — `data/`, `uploads/`, and `chroma_db/`-style generated stores are git-ignored on purpose.
+- **Never modify a file under `tests/` in order to make a failing test pass.** If a test is failing, the default assumption is the *implementation* is wrong, not the test. If a test genuinely is wrong or outdated, say so explicitly and flag it for human review in the PR description — don't silently loosen an assertion, delete a test case, or change expected values to match new (possibly buggy) behavior. This applies to `services/*/tests/` and `services/*/evals/cases.py` alike — the whole point of both is to catch regressions an agent (or a person) might otherwise accept without noticing.
 
 ---
 

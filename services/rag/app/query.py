@@ -1,5 +1,5 @@
 """Query: retrieve relevant chunks and ask Claude, grounded in that context.
-
+ 
 Vector storage: Postgres + pgvector, via langchain-postgres's PGVector class
 — same swap as ingest.py. The chain-building logic itself (retrieve ->
 prompt -> Claude -> parse) is unchanged from Step 1; only how the retriever
@@ -57,6 +57,48 @@ def ask(question: str) -> str:
     chain = build_chain()
     return chain.invoke(question)
 
+
+def build_retriever(
+    database_url: str = config.DATABASE_URL,
+    collection_name: str = config.COLLECTION_NAME,
+    embedding_model: str = config.EMBEDDING_MODEL,
+    k: int = config.RETRIEVER_K,
+):
+    """The retriever alone, without the rest of the chain.
+ 
+    Split out so the eval harness (services/rag/evals/) can inspect what
+    was actually retrieved for a question, not just the final answer —
+    needed for a faithfulness check ("does the answer's content actually
+    come from this context, or did the model drift beyond it?").
+    """
+    embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
+    db = PGVector(
+        embeddings=embeddings,
+        connection=database_url,
+        collection_name=collection_name,
+        use_jsonb=True,
+    )
+    return db.as_retriever(search_kwargs={"k": k})
+ 
+ 
+def ask_with_context(question: str) -> dict:
+    """Like ask(), but also returns the retrieved context that produced it.
+ 
+    Returns {"answer": str, "context": str} — used by the eval harness for
+    faithfulness checks. Kept separate from ask() rather than changing
+    ask()'s return type, so nothing that already depends on ask() returning
+    a plain string breaks.
+    """
+    retriever = build_retriever()
+    retrieved_docs = retriever.invoke(question)
+    context = format_docs(retrieved_docs)
+ 
+    prompt = ChatPromptTemplate.from_template(config.PROMPT_TEMPLATE)
+    llm = ChatAnthropic(model=config.ANTHROPIC_MODEL)
+    chain = prompt | llm | StrOutputParser()
+ 
+    answer = chain.invoke({"context": context, "question": question})
+    return {"answer": answer, "context": context}
 
 if __name__ == "__main__":
     chain = build_chain()
