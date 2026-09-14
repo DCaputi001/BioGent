@@ -6,7 +6,6 @@ prompt -> Claude -> parse) is unchanged from Step 1; only how the retriever
 connects to the vector store changed.
 """
 
-from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -15,8 +14,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector
 
 from app import config
-
-load_dotenv()
 
 
 def format_docs(docs: list) -> str:

@@ -10,9 +10,28 @@ nothing below should need to be edited in code to change behavior.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Must run BEFORE the os.getenv() calls below: every value in this module is
+# resolved once, at import time. ingest.py/query.py previously called this
+# AFTER importing this module, which meant .env was read too late to affect
+# anything here — a .env pointing at RDS was silently ignored in favor of the
+# localhost default. override=False (the default) is deliberate: real
+# environment variables injected by docker-compose or CI still win over a .env
+# file that happens to be present. See docker-compose.yml's NETWORKING NOTE.
+load_dotenv()
+
 
 def _env_int(name: str, default: int) -> int:
     return int(os.getenv(name, default))
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """Parse a boolean env var, accepting the usual spellings people reach for."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 # --- Paths ---
@@ -41,6 +60,14 @@ COLLECTION_NAME = os.getenv("RAG_COLLECTION_NAME", "biogent_rag_documents")
 # debugging session — see the small project's README Troubleshooting Log.
 # Swaps to BGE-M3 once AWS GPU compute is available — see ARCHITECTURE.md.
 EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+
+# --- Document parsing ---
+# Docling runs OCR over every PDF page by default. Research PDFs are
+# born-digital and already carry a text layer, so OCR detects nothing while
+# costing roughly 90 seconds per run (35 consecutive "text detection result is
+# empty" warnings on a two-PDF corpus). Off by default; turn on for scanned or
+# image-only documents. See KNOWN_ISSUES.md.
+DO_OCR = _env_bool("RAG_DO_OCR", False)
 
 # --- Chunking (plain text only — PDFs use Docling's HybridChunker instead,
 # which sizes itself from EMBEDDING_MODEL's own tokenizer, not these) ---
