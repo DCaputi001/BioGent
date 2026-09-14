@@ -8,6 +8,12 @@
 # postgres container. That's why the rag service below overrides
 # RAG_DATABASE_URL to use the hostname "postgres" (the service name) instead.
 #
+# PRECEDENCE NOTE: that override also beats anything in .env — compose applies
+# `environment:` after `env_file:`. This is deliberate; compose stays a
+# self-contained local stack. So a .env pointing at RDS changes where host runs
+# (`uv run python -m app.ingest`) write, but NOT where `docker compose run rag`
+# writes. Remove the override below if you want the container to hit RDS too.
+#
 # Start:               docker compose up -d
 # Run ingestion:        docker compose run --rm rag python -m app.ingest
 # Run ingestion fresh:   docker compose run --rm rag python -m app.ingest --reset

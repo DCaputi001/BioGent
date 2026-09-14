@@ -24,22 +24,28 @@ from functools import lru_cache
 from pathlib import Path
 
 from docling.chunking import HybridChunker
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
-from dotenv import load_dotenv
 from langchain_core.documents import Document as LCDocument
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
 from transformers import AutoTokenizer
 
 from app import config
 
-load_dotenv()
+# Short on purpose: this is a reachability probe, not a real query. A database
+# that cannot answer in this long is down as far as ingestion is concerned.
+DATABASE_PREFLIGHT_TIMEOUT_SECONDS = 5
 
 
 @lru_cache(maxsize=1)
-def _get_converter() -> DocumentConverter:
+def _get_converter(do_ocr: bool = config.DO_OCR) -> DocumentConverter:
     """Lazily create (and cache) Docling's converter.
 
     Deliberately NOT instantiated at module import time — that would mean
@@ -48,8 +54,15 @@ def _get_converter() -> DocumentConverter:
     lru_cache means the first real call pays that cost once, and every
     call after reuses the same instance, same as the old module-level
     approach — just deferred until actually needed.
+
+    OCR is off unless config.DO_OCR says otherwise: a bare DocumentConverter()
+    enables it, which wastes minutes on born-digital PDFs that already have a
+    text layer. See config.DO_OCR and KNOWN_ISSUES.md.
     """
-    return DocumentConverter()
+    pipeline_options = PdfPipelineOptions(do_ocr=do_ocr)
+    return DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
 
 
 def _build_chunker(embedding_model: str = config.EMBEDDING_MODEL) -> HybridChunker:
@@ -125,6 +138,34 @@ def load_and_chunk_plaintext(
     return documents
 
 
+def _check_database_connection(
+    database_url: str,
+    timeout_seconds: int = DATABASE_PREFLIGHT_TIMEOUT_SECONDS,
+) -> None:
+    """Fail fast when the vector store is unreachable.
+
+    Parsing and embedding run for minutes before build_vector_store() opens its
+    first connection, so without this probe an unreachable database burns that
+    entire run before surfacing a connection error at the very end.
+
+    Raises RuntimeError with the target host but never the password — the URL
+    carries real credentials and this message ends up in logs and tracebacks.
+    """
+    safe_url = make_url(database_url).render_as_string(hide_password=True)
+    engine = create_engine(database_url, connect_args={"connect_timeout": timeout_seconds})
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise RuntimeError(
+            f"Cannot reach the vector store at {safe_url}. "
+            "Check RAG_DATABASE_URL in services/rag/.env, or start the local "
+            "database with 'docker compose up -d'."
+        ) from exc
+    finally:
+        engine.dispose()
+
+
 def build_vector_store(
     chunks: list[LCDocument],
     database_url: str = config.DATABASE_URL,
@@ -168,6 +209,8 @@ def run_ingestion(
     reset=False (default): add to whatever's already in the collection.
     reset=True: wipe the collection first, then ingest — a clean rebuild.
     """
+    _check_database_connection(database_url)
+
     pdf_chunks = load_and_chunk_pdfs(data_dir)
     plaintext_chunks = load_and_chunk_plaintext(data_dir)
     chunks = pdf_chunks + plaintext_chunks

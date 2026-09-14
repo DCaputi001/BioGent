@@ -22,6 +22,34 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 ---
 
+## OCR is off by default, so scanned PDFs ingest as empty
+
+**Where:** `services/rag/app/config.py` (`DO_OCR`) / `app/ingest.py` (`_get_converter()`)
+
+**What's incomplete:** Docling runs OCR over every PDF page by default. Research papers are born-digital and already carry a text layer, so OCR detected nothing while costing roughly 90 seconds per ingestion run (35 consecutive "text detection result is empty" warnings on a two-PDF corpus). OCR is now opt-in via `RAG_DO_OCR`, defaulting to off. The gap: a scanned or image-only PDF now ingests as zero chunks silently, with nothing telling the researcher why their document produced no answers.
+
+**Why deferred:** Doing this properly means detecting per document whether a text layer exists and enabling OCR only for the ones that need it, rather than a single global flag. That detection belongs at upload time, alongside the per-document tracking that doesn't exist yet.
+
+**Unblocked by:** Phase 8 (Auth & Multi-User) in `PRODUCTION_PLAN.md` — the same `documents` table that fixes re-ingestion duplicates is where a per-document "needs OCR" decision would live, set once at upload instead of guessed globally at ingest time.
+
+**Workaround until then:** Set `RAG_DO_OCR=true` in `services/rag/.env` when ingesting scanned documents, and back to `false` afterward.
+
+---
+
+## Some chunks exceed the embedding model's 512-token limit and are silently truncated
+
+**Where:** `services/rag/app/ingest.py` — `load_and_chunk_pdfs()` / `_build_chunker()`
+
+**What's incomplete:** `HybridChunker` sizes chunks to `bge-small-en-v1.5`'s 512-token budget, but `chunker.contextualize()` prepends the heading trail *after* chunking, which pushes some chunks past the limit. Measured on the current two-PDF corpus: 10 of 154 chunks exceed 512 tokens (largest 531), and the model truncates those tails at embed time. The chunk text stored in Postgres is complete; only its vector under-represents the end of the chunk. Surfaces as the `transformers` warning "Token indices sequence length is longer than the specified maximum sequence length".
+
+**Why deferred:** The overflow is small (about 4 percent on the worst chunk) and affects retrieval ranking subtly rather than breaking anything, so it was separated from the connection fix it was discovered alongside rather than bundled into it.
+
+**Unblocked by:** Nothing external — this is fixable now by giving the chunker headroom for the heading prefix (e.g. `HuggingFaceTokenizer(..., max_tokens=480)`) or by measuring the contextualized length and re-splitting. It needs a re-ingest afterward, since existing vectors were built the old way.
+
+**Workaround until then:** None needed for correctness; retrieval works, just marginally less precisely on the 10 affected chunks.
+
+---
+
 <!--
 Template for future entries:
 
