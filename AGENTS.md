@@ -45,6 +45,7 @@ cd services/rag
 uv sync
 docker compose up -d postgres
 uv run python -m app.ingest        # or: docker compose run --rm rag python -m app.ingest
+uv run python -m app.ingest --from-s3   # ingest from RAG_S3_BUCKET instead of data/
 uv run python -m app.query
 uv run pytest -q                    # unit tests — fast, no API key needed
 uv run python -m evals.run_evals   # evals — needs a real ANTHROPIC_API_KEY, costs real API calls

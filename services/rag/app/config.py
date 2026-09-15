@@ -36,9 +36,18 @@ def _env_bool(name: str, default: bool) -> bool:
 
 # --- Paths ---
 # Preserves the small project's behavior (a `data/` folder next to wherever
-# the app runs), but can be overridden entirely — e.g. once Phase 3 swaps
-# this for reading from S3 instead of local disk.
+# the app runs), but can be overridden entirely. `app.ingest --from-s3`
+# bypasses it and ingests from a temporary download of RAG_S3_BUCKET instead.
 DATA_DIR = Path(os.getenv("RAG_DATA_DIR", "data"))
+
+# --- S3 document source (optional — only used by `app.ingest --from-s3`) ---
+# Credentials are deliberately NOT read here: boto3's default chain (env vars
+# loaded by load_dotenv above, ~/.aws, or an IAM role on AWS) handles them.
+S3_BUCKET = os.getenv("RAG_S3_BUCKET")
+S3_PREFIX = os.getenv("RAG_S3_PREFIX", "")
+# botocore only reads AWS_DEFAULT_REGION when creating a client; AWS_REGION is
+# accepted too because it's the name most people (and .env.example) reach for.
+S3_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
 
 # --- Vector store: Postgres + pgvector ---
 # Replaces the small project's local Chroma directory (RAG_DB_DIR / chroma_db).

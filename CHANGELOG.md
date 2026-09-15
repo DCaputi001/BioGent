@@ -16,6 +16,7 @@ All notable changes to this project are documented here. Format loosely follows 
 - Fail-fast database reachability check in `run_ingestion()` — an unreachable vector store now fails in about a second instead of after a multi-minute parse and embed.
 - `RAG_DO_OCR` setting (default off) making Docling's PDF OCR opt-in; it found nothing on born-digital papers while costing roughly 90 seconds per run.
 - `.env.example` now documents `RAG_DATABASE_URL` and `RAG_DO_OCR`, not just `ANTHROPIC_API_KEY`.
+- `python -m app.ingest --from-s3`: ingests documents from `RAG_S3_BUCKET` (optionally scoped by `RAG_S3_PREFIX`) via a new, separate `app/storage.py`. Files download to a temporary directory that is deleted after the run; parsing and chunking are unchanged. Adds `boto3`. `AWS_REGION` is honored explicitly, since botocore on its own only reads `AWS_DEFAULT_REGION`.
 
 ### Fixed
 - `.env` was ignored entirely: `ingest.py` and `query.py` called `load_dotenv()` *after* importing `app.config`, which resolves every `os.getenv()` at import time. Every setting silently fell back to its default, so a `RAG_DATABASE_URL` pointing at RDS still connected to `localhost`. `config.py` now loads `.env` itself, before reading any variable. Note this changes which database a default run targets on any machine with a populated `.env`.

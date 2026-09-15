@@ -23,6 +23,7 @@ dependencies = [
     # chromadb/langchain-chroma from Step 1.
     "langchain-postgres",
     "psycopg[binary]",
+    "boto3>=1.43.95",
 ]
 
 [dependency-groups]
