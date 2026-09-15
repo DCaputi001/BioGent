@@ -37,7 +37,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from transformers import AutoTokenizer
 
-from app import config
+from app import config, storage
 
 # Short on purpose: this is a reachability probe, not a real query. A database
 # that cannot answer in this long is down as far as ingestion is concerned.
@@ -231,6 +231,7 @@ def run_ingestion(
 
 if __name__ == "__main__":
     import argparse
+    import tempfile
 
     parser = argparse.ArgumentParser(description="Ingest documents into the RAG vector store.")
     parser.add_argument(
@@ -239,7 +240,21 @@ if __name__ == "__main__":
         help="Wipe the collection before ingesting (a full clean rebuild), "
         "instead of the default additive behavior.",
     )
+    parser.add_argument(
+        "--from-s3",
+        action="store_true",
+        help="Download documents from RAG_S3_BUCKET into a temporary directory and "
+        "ingest those, instead of the local data/ folder.",
+    )
     args = parser.parse_args()
 
-    result = run_ingestion(reset=args.reset)
+    if args.from_s3:
+        # Temporary so downloaded research documents are deleted when the run
+        # ends, even on failure, instead of accumulating on local disk.
+        with tempfile.TemporaryDirectory(prefix="biogent-s3-") as download_dir:
+            downloaded = storage.download_documents_from_s3(Path(download_dir))
+            print(f"Downloaded {len(downloaded)} documents from s3://{config.S3_BUCKET}")
+            result = run_ingestion(data_dir=Path(download_dir), reset=args.reset)
+    else:
+        result = run_ingestion(reset=args.reset)
     print(result)
