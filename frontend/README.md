@@ -12,7 +12,7 @@ Currently the default Vite scaffold. The UI is built in the next steps.
 The backend must be running first, from `services/rag`:
 
 ```powershell
-uv run uvicorn app.api:app --reload --port 8001
+uv run uvicorn app.api:app --reload --port 8000
 ```
 
 Then, from this directory:

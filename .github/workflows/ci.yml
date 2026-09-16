@@ -78,16 +78,35 @@ jobs:
           ANTHROPIC_API_KEY: ""
         run: uv run pytest -q
 
-      # --- Placeholder: frontend lint + build (fill in during Phase 4) ---
-      # - uses: actions/setup-node@v4
-      #   with:
-      #     node-version: 20
-      # - name: Install frontend deps
-      #   working-directory: frontend
-      #   run: npm ci
-      # - name: Lint frontend
-      #   working-directory: frontend
-      #   run: npm run lint
-      # - name: Build frontend
-      #   working-directory: frontend
-      #   run: npm run build
+  frontend-tests:
+    # Its own job rather than extra steps on the RAG one: the two have no
+    # shared setup, and a Python failure should not hide a frontend failure.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Node used locally; Vite 8 requires 20.19+.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # ci, not install: fails on a package-lock.json that has drifted from
+      # package.json instead of quietly resolving new versions.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests (no API key required)
+        run: npm test
+
+      # Type-checks via tsc -b before bundling, so a bad backend contract
+      # change fails here rather than in a researcher's browser.
+      - name: Build
+        run: npm run build
