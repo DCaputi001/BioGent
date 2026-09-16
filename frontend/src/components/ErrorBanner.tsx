@@ -1,0 +1,57 @@
+// ErrorBanner.tsx
+// Shows a failed request and the one action worth taking about it.
+//
+// The wording comes from the backend (services/rag/app/errors.py), which
+// already writes for a non-technical reader; this component adds only the
+// affordance, chosen by remedyFor().
+
+import { localHintFor, remedyFor } from '../api/errorActions'
+import type { ApiError } from '../api/types'
+
+const ANTHROPIC_BILLING_URL = 'https://console.anthropic.com/settings/billing'
+
+interface ErrorBannerProps {
+  error: ApiError | null
+  onRetry: () => void
+  onUpdateKey: () => void
+  onOpenHelp: () => void
+}
+
+export function ErrorBanner({ error, onRetry, onUpdateKey, onOpenHelp }: ErrorBannerProps) {
+  if (!error) return null
+
+  const remedy = remedyFor(error)
+  const hint = localHintFor(error)
+
+  return (
+    <section className="panel error" role="alert">
+      <p>{error.message}</p>
+      {hint && <p className="hint">{hint}</p>}
+
+      <div className="actions">
+        {remedy === 'fix-key' && (
+          <>
+            <button type="button" onClick={onUpdateKey}>
+              Use a different key
+            </button>
+            <button type="button" className="link" onClick={onOpenHelp}>
+              How do I get a key?
+            </button>
+          </>
+        )}
+
+        {remedy === 'add-credit' && (
+          <a href={ANTHROPIC_BILLING_URL} target="_blank" rel="noreferrer noopener">
+            Add credit in the Anthropic Console
+          </a>
+        )}
+
+        {remedy === 'retry' && (
+          <button type="button" onClick={onRetry}>
+            Try again
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
