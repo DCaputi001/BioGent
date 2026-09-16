@@ -78,6 +78,29 @@ jobs:
           ANTHROPIC_API_KEY: ""
         run: uv run pytest -q
 
+  rag-image-build:
+    # Phase 5's first bullet: prove the image builds before a deploy depends on
+    # it. Build only, no push — pushing to ECR belongs to deploy.yml, which runs
+    # on main, not on every PR.
+    #
+    # COST NOTE: this is the slowest job in the workflow, because the image
+    # pulls Docling and PyTorch. The GitHub Actions cache keeps repeat builds
+    # cheap; if it becomes a nuisance on PRs that never touch the service, add
+    # a paths filter rather than deleting the job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build RAG image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/rag
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   frontend-tests:
     # Its own job rather than extra steps on the RAG one: the two have no
     # shared setup, and a Python failure should not hide a frontend failure.

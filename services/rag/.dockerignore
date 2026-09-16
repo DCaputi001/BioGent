@@ -1,0 +1,30 @@
+# Everything here is excluded from the build context sent to the Docker daemon.
+#
+# Two reasons it matters. The context is uploaded on every build, and .venv
+# alone is gigabytes. More importantly, data/ holds real research PDFs: nothing
+# copies them into the image today, but keeping them out of the context means a
+# future "COPY . ." cannot quietly publish them inside a pushed image.
+
+# Python environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Research documents and generated stores — never belong in an image
+data/
+chroma_db/
+uploads/
+
+# Secrets. The image reads configuration from the environment at runtime
+# (ECS task definition, or --env-file locally), never from a baked-in file.
+.env
+.env.*
+
+# Not needed at runtime: tests and evals run in CI and locally, against the
+# source tree rather than the image.
+test/
+evals/
+*.md

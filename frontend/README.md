@@ -29,8 +29,13 @@ request.
 
 ## Configuration
 
-`VITE_API_BASE_URL` points at the backend. Copy `.env.example` to `.env.local`
-and edit it there; `.env.local` is git-ignored.
+`VITE_API_BASE_URL` points at the backend, including the `/api` prefix every
+route is served under. Copy `.env.example` to `.env.local` and edit it there;
+`.env.local` is git-ignored.
+
+In production this is just `/api`: one CloudFront distribution serves this app
+from S3 and routes `/api/*` to the backend, so the request is same-origin and
+CORS does not apply at all.
 
 Only `VITE_`-prefixed variables reach the browser, and they are embedded in the
 built JavaScript as plain text, so none of them may hold a secret. The

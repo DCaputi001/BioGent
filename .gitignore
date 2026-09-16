@@ -46,6 +46,7 @@ desktop.ini
 #data folder
 data/
 
-#planning
-ARCHITECTURE.md
-PRODUCTION_PLAN.md
+# NOTE: ARCHITECTURE.md and PRODUCTION_PLAN.md are deliberately TRACKED, not
+# ignored. AGENTS.md and KNOWN_ISSUES.md both point at them as the source of
+# truth for design decisions and build order, so they have to exist in a fresh
+# clone for those references to mean anything.
