@@ -40,20 +40,45 @@ def _env_bool(name: str, default: bool) -> bool:
 # bypasses it and ingests from a temporary download of RAG_S3_BUCKET instead.
 DATA_DIR = Path(os.getenv("RAG_DATA_DIR", "data"))
 
-# --- S3 document source (optional — only used by `app.ingest --from-s3`) ---
-# Credentials are deliberately NOT read here: boto3's default chain (env vars
-# loaded by load_dotenv above, ~/.aws, or an IAM role on AWS) handles them.
-S3_BUCKET = os.getenv("RAG_S3_BUCKET")
-S3_PREFIX = os.getenv("RAG_S3_PREFIX", "")
+# --- AWS (shared by S3 and Secrets Manager) ---
+# Credentials are deliberately NOT read here. boto3's default chain resolves
+# them for every service: AWS_PROFILE (~/.aws) locally, the IAM role on AWS.
+# Raw AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in .env are not the supported
+# method — the chain checks them BEFORE AWS_PROFILE, so stale keys left beside
+# a profile would silently win.
 # botocore only reads AWS_DEFAULT_REGION when creating a client; AWS_REGION is
 # accepted too because it's the name most people (and .env.example) reach for.
-S3_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+# Appended to every AWS failure message so S3 and Secrets Manager errors point
+# at the same place to look.
+AWS_CREDENTIALS_HINT = (
+    "Check AWS_PROFILE and AWS_REGION in services/rag/.env "
+    "(or the IAM role, when running on AWS)."
+)
+
+# --- S3 document source (optional — only used by `app.ingest --from-s3`) ---
+S3_BUCKET = os.getenv("RAG_S3_BUCKET")
+S3_PREFIX = os.getenv("RAG_S3_PREFIX", "")
 
 # --- Vector store: Postgres + pgvector ---
 # Replaces the small project's local Chroma directory (RAG_DB_DIR / chroma_db).
-# Defaults match docker-compose.yml's local Postgres service — override via
-# .env for a different local setup, and via real secrets management once
-# this points at RDS in Phase 3.
+# Always read the connection through app.db_credentials.get_database_url(),
+# never these values directly: it picks between the two sources below.
+#
+# Source 1 (RDS): RAG_DB_SECRET_ID names a Secrets Manager secret holding the
+# username/password. The password never appears in env vars or files. An
+# RDS-managed master secret holds only username/password, so host, port, and
+# database name come from the non-secret settings here; a secret that does
+# include host/port/dbname takes precedence over them.
+DB_SECRET_ID = os.getenv("RAG_DB_SECRET_ID")
+DB_HOST = os.getenv("RAG_DB_HOST")
+DB_PORT = _env_int("RAG_DB_PORT", 5432)
+DB_NAME = os.getenv("RAG_DB_NAME")
+DB_SSLMODE = os.getenv("RAG_DB_SSLMODE", "require")
+#
+# Source 2 (local dev only, used when RAG_DB_SECRET_ID is unset): a full URL.
+# The default matches docker-compose.yml's throwaway local Postgres login.
+# Never point this at RDS — that would put a real password back into .env.
 DATABASE_URL = os.getenv(
     "RAG_DATABASE_URL",
     "postgresql+psycopg://biogent:biogent@localhost:5432/biogent_rag",

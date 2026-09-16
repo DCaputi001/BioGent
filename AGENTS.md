@@ -66,7 +66,8 @@ Full detail in `CONTRIBUTING.md`. Quick reference:
 ## Explicit "don't" list
 
 - Never commit `.env` files or any real secrets/API keys — `.gitignore` already excludes `.env` but allows `.env.example`.
-- Never touch RDS credentials directly in code — use AWS Secrets Manager once that layer exists (Phase 3).
+- Never touch RDS credentials directly in code or `.env`. The password lives only in AWS Secrets Manager: set `RAG_DB_SECRET_ID` and read the connection via `app/db_credentials.get_database_url()`, never `config.DATABASE_URL` directly (that is the local docker-compose fallback only).
+- Never put `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in `.env`. Local AWS access uses one AWS CLI profile (`AWS_PROFILE`) for every service; on AWS it uses an IAM role. CI runs a gitleaks secret scan on every push.
 - Never hardcode an Anthropic API key anywhere in the app as a "convenience" bypass of the BYO-key flow — this breaks the core cost-model decision for this project.
 - Never commit real research documents or datasets — `data/`, `uploads/`, and `chroma_db/`-style generated stores are git-ignored on purpose.
 - **Never modify a file under `tests/` in order to make a failing test pass.** If a test is failing, the default assumption is the *implementation* is wrong, not the test. If a test genuinely is wrong or outdated, say so explicitly and flag it for human review in the PR description — don't silently loosen an assertion, delete a test case, or change expected values to match new (possibly buggy) behavior. This applies to `services/*/tests/` and `services/*/evals/cases.py` alike — the whole point of both is to catch regressions an agent (or a person) might otherwise accept without noticing.

@@ -13,7 +13,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector
 
-from app import config
+from app import config, db_credentials
 
 
 def format_docs(docs: list) -> str:
@@ -21,21 +21,19 @@ def format_docs(docs: list) -> str:
 
 
 def build_chain(
-    database_url: str = config.DATABASE_URL,
+    database_url: str | None = None,
     collection_name: str = config.COLLECTION_NAME,
     embedding_model: str = config.EMBEDDING_MODEL,
     k: int = config.RETRIEVER_K,
     anthropic_model: str = config.ANTHROPIC_MODEL,
 ):
     """Assemble the retrieve -> prompt -> Claude -> parse chain."""
-    embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
-    db = PGVector(
-        embeddings=embeddings,
-        connection=database_url,
+    retriever = build_retriever(
+        database_url=database_url,
         collection_name=collection_name,
-        use_jsonb=True,
+        embedding_model=embedding_model,
+        k=k,
     )
-    retriever = db.as_retriever(search_kwargs={"k": k})
 
     prompt = ChatPromptTemplate.from_template(config.PROMPT_TEMPLATE)
     llm = ChatAnthropic(model=anthropic_model)
@@ -56,7 +54,7 @@ def ask(question: str) -> str:
 
 
 def build_retriever(
-    database_url: str = config.DATABASE_URL,
+    database_url: str | None = None,
     collection_name: str = config.COLLECTION_NAME,
     embedding_model: str = config.EMBEDDING_MODEL,
     k: int = config.RETRIEVER_K,
@@ -67,7 +65,10 @@ def build_retriever(
     was actually retrieved for a question, not just the final answer —
     needed for a faithfulness check ("does the answer's content actually
     come from this context, or did the model drift beyond it?").
+
+    database_url=None resolves it via db_credentials (Secrets Manager or local).
     """
+    database_url = database_url or db_credentials.get_database_url()
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
     db = PGVector(
         embeddings=embeddings,

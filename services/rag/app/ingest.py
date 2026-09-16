@@ -37,7 +37,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from transformers import AutoTokenizer
 
-from app import config, storage
+from app import config, db_credentials, storage
 
 # Short on purpose: this is a reachability probe, not a real query. A database
 # that cannot answer in this long is down as far as ingestion is concerned.
@@ -159,8 +159,9 @@ def _check_database_connection(
     except SQLAlchemyError as exc:
         raise RuntimeError(
             f"Cannot reach the vector store at {safe_url}. "
-            "Check RAG_DATABASE_URL in services/rag/.env, or start the local "
-            "database with 'docker compose up -d'."
+            "For RDS, check RAG_DB_SECRET_ID, RAG_DB_HOST, and RAG_DB_NAME in "
+            "services/rag/.env. For local runs, check RAG_DATABASE_URL, or start "
+            "the local database with 'docker compose up -d'."
         ) from exc
     finally:
         engine.dispose()
@@ -168,7 +169,7 @@ def _check_database_connection(
 
 def build_vector_store(
     chunks: list[LCDocument],
-    database_url: str = config.DATABASE_URL,
+    database_url: str | None = None,
     collection_name: str = config.COLLECTION_NAME,
     embedding_model: str = config.EMBEDDING_MODEL,
     reset: bool = False,
@@ -186,6 +187,7 @@ def build_vector_store(
     ingested this specific document." See KNOWN_ISSUES.md — proper fix
     needs per-user document tracking (Phase 8).
     """
+    database_url = database_url or db_credentials.get_database_url()
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
     db = PGVector.from_documents(
         documents=chunks,
@@ -200,7 +202,7 @@ def build_vector_store(
 
 def run_ingestion(
     data_dir: Path = config.DATA_DIR,
-    database_url: str = config.DATABASE_URL,
+    database_url: str | None = None,
     collection_name: str = config.COLLECTION_NAME,
     reset: bool = False,
 ) -> dict:
@@ -208,7 +210,9 @@ def run_ingestion(
 
     reset=False (default): add to whatever's already in the collection.
     reset=True: wipe the collection first, then ingest — a clean rebuild.
+    database_url=None resolves it via db_credentials (Secrets Manager or local).
     """
+    database_url = database_url or db_credentials.get_database_url()
     _check_database_connection(database_url)
 
     pdf_chunks = load_and_chunk_pdfs(data_dir)

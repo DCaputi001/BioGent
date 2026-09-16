@@ -50,6 +50,20 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 ---
 
+## Database credentials are cached for the life of the process, so an RDS password rotation isn't picked up
+
+**Where:** `services/rag/app/db_credentials.py` — `get_database_url()`
+
+**What's incomplete:** The URL built from the Secrets Manager secret is cached with `lru_cache`, so each process calls Secrets Manager once. RDS-managed master secrets rotate automatically. A process that is still running when a rotation happens keeps the old password, and its new connections then fail authentication until it restarts.
+
+**Why deferred:** Today the service runs only as short-lived CLI commands (`app.ingest`, `app.query`, evals), which finish well within a rotation window and pick up the new password on the next run. Refresh logic (re-fetch the secret when authentication fails, then retry once) only earns its complexity once something runs for a long time.
+
+**Unblocked by:** Phase 4 in `PRODUCTION_PLAN.md`, the long-running HTTP API. At that point, catch the authentication failure, call `get_database_url.cache_clear()`, rebuild the engine, and retry. The alternative is AWS's Secrets Manager caching client with a TTL.
+
+**Workaround until then:** Restart any long-running `app.query` session after a rotation.
+
+---
+
 <!--
 Template for future entries:
 
