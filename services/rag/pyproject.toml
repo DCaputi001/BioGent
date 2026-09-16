@@ -24,6 +24,10 @@ dependencies = [
     "langchain-postgres",
     "psycopg[binary]",
     "boto3>=1.43.95",
+    # HTTP API (app/api.py) — the researcher-facing endpoint the web frontend
+    # calls. See PRODUCTION_PLAN.md Phase 4.
+    "fastapi",
+    "uvicorn[standard]",
 ]
 
 [dependency-groups]

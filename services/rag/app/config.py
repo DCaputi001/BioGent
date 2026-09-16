@@ -114,6 +114,17 @@ RETRIEVER_K = _env_int("RAG_RETRIEVER_K", 4)
 # --- LLM ---
 ANTHROPIC_MODEL = os.getenv("RAG_ANTHROPIC_MODEL", "claude-sonnet-5")
 
+# --- HTTP API ---
+# Origins the browser may call the API from. Defaults to Vite's dev server.
+# Comma-separated, so deployments can add their CloudFront domain. The
+# researcher's Anthropic key is never read from the environment here: it
+# arrives per request, per the BYO-key decision in ARCHITECTURE.md.
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("RAG_CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+
 PROMPT_TEMPLATE = """
 Answer the question using only the context below. If the answer isn't
 in the context, say you don't know — don't make something up.
