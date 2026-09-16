@@ -12,7 +12,14 @@
 # `environment:` after `env_file:`. This is deliberate; compose stays a
 # self-contained local stack. So a .env pointing at RDS changes where host runs
 # (`uv run python -m app.ingest`) write, but NOT where `docker compose run rag`
-# writes. Remove the override below if you want the container to hit RDS too.
+# writes. To have the container hit RDS too, remove the override below and set
+# RAG_DB_SECRET_ID (plus RAG_DB_HOST/RAG_DB_NAME) in .env. The RDS password is
+# fetched from AWS Secrets Manager at runtime and never placed in this file or .env.
+#
+# CREDENTIALS NOTE: the biogent/biogent login below is a throwaway for this
+# local-only database, not a real secret. AWS access (S3, Secrets Manager) comes
+# from your AWS CLI profile: AWS_PROFILE in .env plus the read-only ~/.aws mount
+# on the rag service. No AWS access keys belong in .env.
 #
 # Start:               docker compose up -d
 # Run ingestion:        docker compose run --rm rag python -m app.ingest
@@ -67,6 +74,11 @@ services:
       # EVERY `docker compose run` would re-download everything from
       # scratch, since a fresh container has no memory of the last one.
       - hf-cache:/home/appuser/.cache
+      # Your AWS CLI config and credentials, read-only, so AWS_PROFILE from .env
+      # resolves inside the container the same way it does on the host. Without
+      # it boto3 raises ProfileNotFound and --from-s3 / RAG_DB_SECRET_ID fail.
+      # USERPROFILE is the Windows home directory; HOME covers macOS/Linux.
+      - ${USERPROFILE:-${HOME}}/.aws:/home/appuser/.aws:ro
 
 volumes:
   pgdata:

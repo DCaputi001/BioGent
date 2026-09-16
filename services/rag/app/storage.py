@@ -63,7 +63,7 @@ def download_documents_from_s3(
             "RAG_S3_BUCKET is not set. Set it in services/rag/.env to ingest with --from-s3."
         )
 
-    client = client or boto3.client("s3", region_name=config.S3_REGION)
+    client = client or boto3.client("s3", region_name=config.AWS_REGION)
     downloaded: list[Path] = []
 
     # The try covers the loop, not just the paginate() call: boto3 paginators
@@ -86,7 +86,7 @@ def download_documents_from_s3(
     except (ClientError, BotoCoreError) as exc:
         raise RuntimeError(
             f"Failed to download documents from s3://{bucket}/{prefix}. "
-            "Check RAG_S3_BUCKET, AWS credentials, and region in services/rag/.env."
+            f"Check RAG_S3_BUCKET. {config.AWS_CREDENTIALS_HINT}"
         ) from exc
 
     return downloaded

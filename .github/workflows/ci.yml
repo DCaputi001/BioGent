@@ -33,6 +33,25 @@ jobs:
           test -d frontend
           echo "OK — scaffold structure present."
 
+  secret-scan:
+    # Blocks committed credentials (AWS keys, database URLs with passwords,
+    # API keys) from reaching main. Real secrets live in AWS Secrets Manager
+    # and local git-ignored .env files only. See AGENTS.md "don't" list.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so a secret committed and then deleted in a later
+          # commit is still caught.
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # Lets the action read the commit range of a pull request. Personal
+          # repositories need no GITLEAKS_LICENSE.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   rag-service-tests:
     runs-on: ubuntu-latest
     defaults:
