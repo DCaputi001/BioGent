@@ -9,7 +9,10 @@ import type { ApiErrorBody, AskResponse } from './types'
 /** Header the API expects the researcher's Anthropic key in (see api.py). */
 const API_KEY_HEADER = 'X-Anthropic-Api-Key'
 
-const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
+// Includes the /api prefix the service serves under. In production this is the
+// relative "/api": CloudFront serves the app and the API from one domain, so
+// the request is same-origin and CORS never comes into play.
+const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api'
 
 /** Shown when the failure has no researcher-readable message of its own. */
 const UNREACHABLE_MESSAGE =

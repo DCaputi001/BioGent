@@ -68,14 +68,23 @@ def client() -> TestClient:
 
 def _ask(client: TestClient, question: str = QUESTION, key: str | None = API_KEY):
     headers = {api.API_KEY_HEADER: key} if key is not None else {}
-    return client.post("/ask", json={"question": question}, headers=headers)
+    return client.post(f"{api.API_PREFIX}/ask", json={"question": question}, headers=headers)
 
 
 def test_health_needs_no_key_or_database(client):
-    response = client.get("/health")
+    response = client.get(f"{api.API_PREFIX}/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_routes_are_served_under_the_api_prefix(client):
+    """CloudFront routes /api/* to this service and passes the path through
+    unchanged, so an unprefixed route would 404 in production while passing
+    every local test that hit it directly.
+    """
+    assert client.get("/health").status_code == 404
+    assert client.post("/ask", json={"question": "x"}).status_code == 404
 
 
 def test_answers_question_on_callers_key(client, recorded_calls):

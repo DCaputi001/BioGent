@@ -28,7 +28,33 @@ dependencies = [
     # calls. See PRODUCTION_PLAN.md Phase 4.
     "fastapi",
     "uvicorn[standard]",
+    # Listed explicitly, though docling and sentence-transformers would pull
+    # them in anyway: a transitive dependency cannot be pointed at the CPU-only
+    # index below, and a direct one can. torchvision has to be pinned to the
+    # same index as torch -- mixing a CPU torch with a default-index
+    # torchvision builds an image that imports torch fine and then dies with
+    # "operator torchvision::nms does not exist" the first time transformers
+    # loads a model.
+    "torch",
+    "torchvision",
 ]
+
+# PyTorch's default Linux wheels bundle CUDA, which is gigabytes of GPU runtime
+# that cannot execute on Fargate (or on any machine this project targets —
+# embeddings run on CPU per ARCHITECTURE.md, with GPU deferred to the BGE-M3
+# cutover). Resolving torch from the CPU index instead is what takes the
+# container image from ~10.7GB to something deployable.
+#
+# explicit = true keeps this index scoped to the packages named in
+# [tool.uv.sources]; without it, uv would search it for every dependency.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [dependency-groups]
 dev = [

@@ -21,7 +21,8 @@
 # from your AWS CLI profile: AWS_PROFILE in .env plus the read-only ~/.aws mount
 # on the rag service. No AWS access keys belong in .env.
 #
-# Start:               docker compose up -d
+# Start:               docker compose up -d      (rag serves the API on :8000)
+# Check it:             curl http://localhost:8000/api/health
 # Run ingestion:        docker compose run --rm rag python -m app.ingest
 # Run ingestion fresh:   docker compose run --rm rag python -m app.ingest --reset
 # Run the query loop:   docker compose run --rm rag python -m app.query
@@ -51,6 +52,10 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    ports:
+      # The image now defaults to serving the HTTP API, so publish it. Runs
+      # that override the command (ingestion, the query REPL) simply ignore this.
+      - "8000:8000"
     environment:
       # Overrides config.py's "localhost" default — see NETWORKING NOTE
       # above. "postgres" here resolves to the postgres service's

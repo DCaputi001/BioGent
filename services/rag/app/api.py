@@ -17,7 +17,7 @@ Run locally:
 
 import logging
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,11 +30,19 @@ logger = logging.getLogger(__name__)
 
 API_KEY_HEADER = "X-Anthropic-Api-Key"
 
+# Every route lives under /api. In production one CloudFront distribution serves
+# the frontend from S3 and routes /api/* here, so the app owns the prefix rather
+# than relying on an edge function to rewrite paths. Same URLs locally, which
+# keeps development and production honest about what the frontend calls.
+API_PREFIX = "/api"
+
 app = FastAPI(
     title="BioGent RAG API",
     description="Ask grounded questions about ingested research documents.",
     version="0.1.0",
 )
+
+router = APIRouter(prefix=API_PREFIX)
 
 # The browser blocks the frontend's calls without this once the Vite dev server
 # (default http://localhost:5173) starts calling the API. curl ignores CORS
@@ -98,7 +106,7 @@ def require_api_key(
     return key
 
 
-@app.get("/health")
+@router.get("/health")
 def health() -> dict:
     """Liveness only: no database call and no API key, so it stays cheap.
 
@@ -108,7 +116,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post(
+@router.post(
     "/ask",
     response_model=AskResponse,
     responses={
@@ -143,3 +151,8 @@ def ask(request: AskRequest, api_key: str = Depends(require_api_key)) -> AskResp
         raise error from exc
 
     return AskResponse(answer=result["answer"], sources=result["sources"])
+
+
+# Registered after the routes above are defined, which is what actually puts
+# them on the app under API_PREFIX.
+app.include_router(router)

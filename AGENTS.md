@@ -22,7 +22,7 @@ BioGent is a production, multi-researcher, web-based platform for scientific/tax
 BioGent/
 ├── services/
 │   ├── rag/              # RAG document-search service (Python)
-│   └── data-agent/       # data analyst agent — LangGraph + MCP (built later, Phase 7)
+│   └── data-agent/       # data analyst agent — LangGraph + MCP (Phase 7, which now runs AFTER Phase 8)
 ├── frontend/              # React + TypeScript + Vite web app
 ├── .github/
 │   └── workflows/         # CI/CD (GitHub Actions)
@@ -47,6 +47,7 @@ docker compose up -d postgres
 uv run python -m app.ingest        # or: docker compose run --rm rag python -m app.ingest
 uv run python -m app.ingest --from-s3   # ingest from RAG_S3_BUCKET instead of data/
 uv run python -m app.query
+uv run uvicorn app.api:app --reload --port 8000   # HTTP API — routes live under /api
 uv run pytest -q                    # unit tests — fast, no API key needed
 uv run python -m evals.run_evals   # evals — needs a real ANTHROPIC_API_KEY, costs real API calls
 ```
