@@ -45,3 +45,7 @@ desktop.ini
 
 #data folder
 data/
+
+#planning
+ARCHITECTURE.md
+PRODUCTION_PLAN.md

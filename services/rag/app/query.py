@@ -4,7 +4,15 @@ Vector storage: Postgres + pgvector, via langchain-postgres's PGVector class
 — same swap as ingest.py. The chain-building logic itself (retrieve ->
 prompt -> Claude -> parse) is unchanged from Step 1; only how the retriever
 connects to the vector store changed.
+
+BYO-key: every entry point takes an optional anthropic_api_key, which the HTTP
+API (app/api.py) fills in per request so each query runs on the researcher's
+own key. The key is passed to ChatAnthropic for that one call and never stored.
+Left as None, ChatAnthropic falls back to ANTHROPIC_API_KEY in the environment
+— the CLI and the eval harness rely on that, the web app must never use it.
 """
+
+from functools import lru_cache
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.output_parsers import StrOutputParser
@@ -20,12 +28,39 @@ def format_docs(docs: list) -> str:
     return "\n\n---\n\n".join(doc.page_content for doc in docs)
 
 
+def source_names(docs: list) -> list[str]:
+    """Unique source filenames behind an answer, kept in retrieval order.
+
+    Ordered by relevance rather than sorted, so the strongest match reads
+    first when the UI shows what an answer was grounded in.
+    """
+    names: list[str] = []
+    for doc in docs:
+        name = doc.metadata.get("source")
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _build_llm(anthropic_model: str, anthropic_api_key: str | None) -> ChatAnthropic:
+    """ChatAnthropic on the caller's key when given one, else the env var.
+
+    Passing api_key=None explicitly would override ChatAnthropic's own
+    environment lookup, so the argument is omitted entirely in that case —
+    that fallback is what the CLI and the evals run on.
+    """
+    if anthropic_api_key:
+        return ChatAnthropic(model=anthropic_model, api_key=anthropic_api_key)
+    return ChatAnthropic(model=anthropic_model)
+
+
 def build_chain(
     database_url: str | None = None,
     collection_name: str = config.COLLECTION_NAME,
     embedding_model: str = config.EMBEDDING_MODEL,
     k: int = config.RETRIEVER_K,
     anthropic_model: str = config.ANTHROPIC_MODEL,
+    anthropic_api_key: str | None = None,
 ):
     """Assemble the retrieve -> prompt -> Claude -> parse chain."""
     retriever = build_retriever(
@@ -36,7 +71,7 @@ def build_chain(
     )
 
     prompt = ChatPromptTemplate.from_template(config.PROMPT_TEMPLATE)
-    llm = ChatAnthropic(model=anthropic_model)
+    llm = _build_llm(anthropic_model, anthropic_api_key)
 
     chain = (
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
@@ -47,9 +82,9 @@ def build_chain(
     return chain
 
 
-def ask(question: str) -> str:
+def ask(question: str, anthropic_api_key: str | None = None) -> str:
     """Convenience entry point: build a chain and answer one question."""
-    chain = build_chain()
+    chain = build_chain(anthropic_api_key=anthropic_api_key)
     return chain.invoke(question)
 
 
@@ -77,26 +112,48 @@ def build_retriever(
         use_jsonb=True,
     )
     return db.as_retriever(search_kwargs={"k": k})
- 
- 
-def ask_with_context(question: str) -> dict:
-    """Like ask(), but also returns the retrieved context that produced it.
- 
-    Returns {"answer": str, "context": str} — used by the eval harness for
-    faithfulness checks. Kept separate from ask() rather than changing
-    ask()'s return type, so nothing that already depends on ask() returning
-    a plain string breaks.
+
+
+@lru_cache(maxsize=1)
+def get_retriever():
+    """The default retriever, built once per process.
+
+    build_retriever() loads the embedding model (~130MB) and opens a new
+    pgvector connection every call. That is fine for a CLI run that calls it
+    once, but the HTTP API would otherwise pay it on EVERY request. Long-lived
+    callers use this; anything needing non-default settings still calls
+    build_retriever() directly.
     """
-    retriever = build_retriever()
+    return build_retriever()
+
+
+def ask_with_context(
+    question: str,
+    anthropic_api_key: str | None = None,
+    retriever=None,
+) -> dict:
+    """Like ask(), but also returns the retrieved context that produced it.
+
+    Returns {"answer": str, "context": str, "sources": list[str]} — used by the
+    eval harness for faithfulness checks, and by the HTTP API, which passes the
+    cached retriever and the researcher's own key. Kept separate from ask()
+    rather than changing ask()'s return type, so nothing that already depends
+    on ask() returning a plain string breaks.
+    """
+    retriever = retriever or build_retriever()
     retrieved_docs = retriever.invoke(question)
     context = format_docs(retrieved_docs)
- 
+
     prompt = ChatPromptTemplate.from_template(config.PROMPT_TEMPLATE)
-    llm = ChatAnthropic(model=config.ANTHROPIC_MODEL)
+    llm = _build_llm(config.ANTHROPIC_MODEL, anthropic_api_key)
     chain = prompt | llm | StrOutputParser()
- 
+
     answer = chain.invoke({"context": context, "question": question})
-    return {"answer": answer, "context": context}
+    return {
+        "answer": answer,
+        "context": context,
+        "sources": source_names(retrieved_docs),
+    }
 
 if __name__ == "__main__":
     chain = build_chain()
