@@ -1,0 +1,45 @@
+# outputs.tf
+# Values needed to deploy, to configure CI, and to check the thing works.
+# The origin secret is intentionally absent: it lives in state, not in output.
+
+output "app_url" {
+  description = "The researcher-facing URL. Serves the app, and the API under /api."
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}"
+}
+
+output "ecr_repository_url" {
+  description = "Push target for the RAG image."
+  value       = aws_ecr_repository.rag.repository_url
+}
+
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.main.name
+}
+
+output "ecs_service_name" {
+  value = aws_ecs_service.rag.name
+}
+
+output "task_definition_family" {
+  value = aws_ecs_task_definition.rag.family
+}
+
+output "frontend_bucket" {
+  description = "Sync the built SPA here."
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "cloudfront_distribution_id" {
+  description = "Needed to invalidate the cache after a frontend deploy."
+  value       = aws_cloudfront_distribution.main.id
+}
+
+output "github_actions_role_arn" {
+  description = "Set as the AWS_DEPLOY_ROLE variable in the GitHub repository. Not a secret."
+  value       = aws_iam_role.github_actions.arn
+}
+
+output "alb_dns_name" {
+  description = "For verification only: hitting this directly should return 403."
+  value       = aws_lb.main.dns_name
+}

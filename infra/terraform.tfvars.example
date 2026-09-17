@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+#
+# Nothing here is a secret -- these are ARNs, hostnames and bucket names, all
+# visible in the AWS console. The database password stays in Secrets Manager
+# and the researcher's Anthropic key never leaves their browser.
+
+aws_region  = "us-east-1"
+aws_profile = "biogent-admin"
+
+# From services/rag/.env -- the same values the app already uses locally.
+db_secret_arn    = "arn:aws:secretsmanager:us-east-1:396913715360:secret:rds!db-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-xxxxxx"
+db_host          = "biogent-rag-dev.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com"
+db_name          = "biogent_rag"
+documents_bucket = "biogent-rag-dev-dcaputi"
+
+# The security group attached to the RDS instance. Find it with:
+#   aws rds describe-db-instances --db-instance-identifier biogent-rag-dev \
+#     --query "DBInstances[0].VpcSecurityGroups[*].VpcSecurityGroupId" \
+#     --output text --profile biogent-admin
+rds_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
+
+# Set to 0 between working sessions to stop paying for Fargate. The load
+# balancer bills whether or not a task is running.
+desired_count = 1
