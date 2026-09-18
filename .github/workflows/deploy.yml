@@ -1,0 +1,146 @@
+# Deploys the RAG service to ECS and the web app to S3 + CloudFront.
+#
+# Phase 5 of PRODUCTION_PLAN.md. Runs on merge to main, gated behind a GitHub
+# Environment with a required reviewer, so a merge proposes a deploy rather
+# than performing one.
+#
+# No AWS keys anywhere: the jobs assume an IAM role via OIDC (infra/github_oidc.tf),
+# trusted only for this repository. AWS_DEPLOY_ROLE is a repository VARIABLE,
+# not a secret -- it is an ARN, useless without that trust relationship.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Required for the OIDC token exchange. id-token: write is what lets the job
+# request a signed identity token; without it the role assumption fails.
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: biogent-rag
+  ECS_CLUSTER: biogent-cluster
+  ECS_SERVICE: biogent-rag
+  TASK_FAMILY: biogent-rag
+  CONTAINER_NAME: rag
+
+concurrency:
+  # One deploy at a time. Two overlapping runs would race to update the same
+  # service, and the loser would silently roll production backwards.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    name: RAG service to ECS
+    runs-on: ubuntu-latest
+    environment: production # the manual approval gate
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # Tagged with the commit SHA, never only :latest -- a rollback needs
+          # to name a specific build, and "latest" cannot be named.
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          docker build -t "$IMAGE" services/rag
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Register new task definition revision
+        id: task-def
+        run: |
+          # Take the live definition, swap only the image, and register that.
+          # Everything else (env vars, roles, sizing) stays owned by Terraform.
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > task-def.json
+
+          jq --arg IMAGE "${{ steps.build.outputs.image }}" --arg NAME "$CONTAINER_NAME" '
+            .containerDefinitions = (
+              .containerDefinitions | map(if .name == $NAME then .image = $IMAGE else . end)
+            )
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' task-def.json > new-task-def.json
+
+          ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json \
+            --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy and wait for it to stabilize
+        run: |
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "${{ steps.task-def.outputs.arn }}" >/dev/null
+
+          # Fails the job if the new tasks never become healthy, so a broken
+          # deploy surfaces here rather than as a researcher's error page.
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+
+  frontend:
+    name: Web app to S3 + CloudFront
+    runs-on: ubuntu-latest
+    environment: production
+    # After the backend: if the API fails to deploy, do not ship a frontend
+    # that expects it.
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build
+        working-directory: frontend
+        env:
+          # Relative, not absolute: CloudFront serves the app and the API from
+          # one domain, so the request is same-origin and needs no host.
+          VITE_API_BASE_URL: /api
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish
+        working-directory: frontend
+        env:
+          BUCKET: ${{ vars.FRONTEND_BUCKET }}
+        run: |
+          # Hashed asset filenames can be cached hard; index.html must not be,
+          # or browsers keep loading the old app after a deploy.
+          aws s3 sync dist/ "s3://$BUCKET/" --delete \
+            --exclude index.html --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://$BUCKET/index.html" \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+      - name: Invalidate CloudFront
+        run: |
+          # Without this the edge keeps serving the previous index.html until
+          # its TTL expires -- the classic "why am I still seeing the old build".
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/index.html" "/"

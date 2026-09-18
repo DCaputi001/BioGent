@@ -13,6 +13,9 @@ venv/
 .env
 .env.*
 !.env.example
+# Build-time configuration, no secrets: the production API base URL. Tracked so
+# a production build does not depend on the shell it runs in.
+!.env.production
 
 # --- Node / React (frontend) ---
 node_modules/
@@ -50,3 +53,13 @@ data/
 # ignored. AGENTS.md and KNOWN_ISSUES.md both point at them as the source of
 # truth for design decisions and build order, so they have to exist in a fresh
 # clone for those references to mean anything.
+# --- Terraform (infra/) ---
+# State can contain resource attributes and generated secrets; tfvars holds
+# account-specific values. Both stay out of git — state lives in S3.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+*.auto.tfvars
+!terraform.tfvars.example
