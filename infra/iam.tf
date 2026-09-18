@@ -29,6 +29,38 @@ resource "aws_iam_role_policy_attachment" "execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Lets ECS resolve LANGSMITH_API_KEY from Secrets Manager into a plain
+# environment variable before the container starts (the "secrets" field on
+# the container definition, in ecs.tf). This belongs on the EXECUTION role,
+# not the task role: the execution role is what the ECS agent already uses to
+# pull the image and write logs, before the application itself runs. This is
+# deliberately a different mechanism from the database password, which
+# app/db_credentials.py fetches itself at runtime using the task role --
+# a plain API key string needs no such parsing, so ECS's native resolution is
+# simpler and needs no application code.
+#
+# count rather than an unconditional statement: langsmith_secret_arn defaults
+# to "", and an IAM policy resource cannot reference an empty resource ARN.
+# `terraform apply` with tracing not yet configured must still succeed.
+resource "aws_iam_role_policy" "execution_langsmith_secret" {
+  count = var.langsmith_secret_arn != "" ? 1 : 0
+
+  name = "${var.project}-execution-langsmith-secret"
+  role = aws_iam_role.execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadLangSmithSecret"
+        Effect   = "Allow"
+        Action   = "secretsmanager:GetSecretValue"
+        Resource = var.langsmith_secret_arn
+      },
+    ]
+  })
+}
+
 resource "aws_iam_role" "task" {
   name               = "${var.project}-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json

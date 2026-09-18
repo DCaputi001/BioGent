@@ -7,6 +7,7 @@ is what "generalized beyond the hardcoded data/ folder" means in practice —
 nothing below should need to be edited in code to change behavior.
 """
 
+import logging
 import os
 from pathlib import Path
 
@@ -113,6 +114,44 @@ RETRIEVER_K = _env_int("RAG_RETRIEVER_K", 4)
 
 # --- LLM ---
 ANTHROPIC_MODEL = os.getenv("RAG_ANTHROPIC_MODEL", "claude-sonnet-5")
+
+# --- Evaluation ---
+# The model that judges eval runs (evals/). Separate from ANTHROPIC_MODEL so a
+# judge can stay fixed while the answering model changes -- otherwise swapping
+# the answering model silently moves the scoring baseline too, and a run is no
+# longer comparable with the reports committed before it.
+EVAL_JUDGE_MODEL = os.getenv("RAG_EVAL_JUDGE_MODEL", ANTHROPIC_MODEL)
+
+# --- LangSmith tracing (Phase 6) ---
+# Not read by this app's own code -- LangChain's SDK picks these three up
+# directly from os.environ at invoke time, so setting them is enough to trace
+# every chain call. Exposed here anyway, so this stays the one place to see
+# every environment variable the service responds to, per this file's own
+# stated purpose. LANGSMITH_* is the current name; the older LANGCHAIN_*
+# spelling still works but is not what new setup should use.
+LANGSMITH_TRACING = _env_bool("LANGSMITH_TRACING", False)
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "biogent-rag-dev")
+
+
+def _warn_if_tracing_misconfigured(tracing: bool, has_key: bool) -> None:
+    """Log once if tracing is on but has nothing to authenticate with.
+
+    A plain function rather than bare module-level code so a test can call it
+    directly with arbitrary inputs, instead of having to reload this module
+    under different environment variables to exercise both branches.
+
+    Not fatal: the LangSmith client swallows trace-submission failures, so a
+    missing key would not break a real query -- it would just silently
+    produce zero traces, which is a worse failure mode than a log line.
+    """
+    if tracing and not has_key:
+        logging.getLogger(__name__).warning(
+            "LANGSMITH_TRACING is enabled but LANGSMITH_API_KEY is unset. "
+            "Tracing will silently produce no traces until it is set."
+        )
+
+
+_warn_if_tracing_misconfigured(LANGSMITH_TRACING, bool(os.getenv("LANGSMITH_API_KEY")))
 
 # --- HTTP API ---
 # Origins the browser may call the API from. Defaults to Vite's dev server.

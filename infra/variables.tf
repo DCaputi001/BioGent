@@ -49,6 +49,24 @@ variable "documents_bucket" {
   type        = string
 }
 
+variable "langsmith_secret_arn" {
+  description = <<-EOT
+    ARN of a Secrets Manager secret holding the LangSmith API key as a plain
+    string. Unlike db_secret_arn, this key is not parsed by application code:
+    it is resolved into LANGSMITH_API_KEY by ECS itself before the container
+    starts, using the execution role, so no Python code needs to know Secrets
+    Manager exists for this value.
+
+    Create it with:
+      aws secretsmanager create-secret --name biogent/langsmith-api-key \
+        --secret-string "lsv2_..." --profile biogent-admin
+
+    Optional: leave unset (empty string) to deploy with tracing disabled.
+  EOT
+  type        = string
+  default     = ""
+}
+
 # --- Service sizing ---
 
 variable "task_cpu" {

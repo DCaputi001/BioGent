@@ -1,0 +1,103 @@
+{
+  "timestamp": "20260918T185641Z",
+  "commit": "dbb4a7d",
+  "answering_model": "claude-sonnet-5",
+  "judge_model": "claude-sonnet-5",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "retriever_k": 4,
+  "collection": "biogent_rag_documents",
+  "metrics": {
+    "answer_fragment_mean_score": 1.0,
+    "refusal_mean_score": 1.0,
+    "retrieval_mean_score": 1.0,
+    "passed": 7,
+    "total": 7
+  },
+  "results": [
+    {
+      "id": "out-of-scope-capital",
+      "question": "What is the capital of Mongolia?",
+      "check": "refusal",
+      "passed": true,
+      "score": 1.0,
+      "detail": "Refusal phrase found: \"don't know\"",
+      "answer": "I don't know \u2014 the provided context does not contain information about the capital of Mongolia.",
+      "sources": [
+        "PIEZO_provides_an_ancient_molecular_framework_for_.pdf"
+      ]
+    },
+    {
+      "id": "out-of-scope-plausible",
+      "question": "What is the resting membrane potential of a human cardiac myocyte?",
+      "check": "refusal",
+      "passed": true,
+      "score": 1.0,
+      "detail": "Refusal phrase found: \"don't know\"",
+      "answer": "I don't know \u2014 the provided context does not contain information about the resting membrane potential of a human cardiac myocyte.",
+      "sources": [
+        "PIEZO_provides_an_ancient_molecular_framework_for_.pdf",
+        "Molecular_and_electrophysiological_properties_unde.pdf"
+      ]
+    },
+    {
+      "id": "yoda1-inhibits-mleipiezo",
+      "question": "What effect does Yoda1 have on MleiPIEZO?",
+      "check": "answer_fragment",
+      "passed": true,
+      "score": 1.0,
+      "detail": "Found expected fragment: 'inhibit'",
+      "answer": "Based on the context, Yoda1 has an **inhibitory** effect on MleiPIEZO, which is notable because Yoda1 normally acts as an *agonist* (activator) of mammalian PIEZO1.\n\nSpecifically:\n\n1. **Reduces ion channel function**: Yoda1 reduced FM1-43 uptake/staining in MleiChimera-transfected cells by a factor of 2.3, compared to a nearly threefold *increase* seen in MmPIEZO1-transfected cells under the same conditions. This indicates Yoda1 inhibits MleiChimera ion-channel function.\n\n2. **Inhibits ciliary beating**: This inhibition of channel function provides a molecular explanation for the observation that Yoda1 reduces beating frequency (f_b) of both balancer cilia and comb plate cilia, with comb plate inhibition mirroring the dose-dependence seen in balancers.\n\n3. **Potency**: Yoda1 inhibited ctenophore PIEZO function with an IC50 of approximately 0.4 \u00b5M, a concentration comparable to Yoda1's EC50 for activating PIEZO1 in human umbilical vein endothelial cells (~0.2 \u00b5M).\n\n4. **Behavioral consequences**: This inhibition impairs locomotor behavior \u2014 Yoda1-treated animals reoriented to their original postural orientation in only 38% of trials, compared to 73% in controls.\n\n5. **Structural basis unclear**: While structural predictions identified a Yoda1-binding pocket in MleiPIEZO similar to that in mammalian PIEZO1, the exact mechanism by which Yoda1 produces inhibition (rather than activation) in MleiPIEZO remains unresolved and is noted as a direction for future structural studies.",
+      "sources": [
+        "PIEZO_provides_an_ancient_molecular_framework_for_.pdf"
+      ]
+    },
+    {
+      "id": "balancer-oscillation-frequency",
+      "question": "At what frequency do balancer cilia spontaneously oscillate?",
+      "check": "answer_fragment",
+      "passed": true,
+      "score": 1.0,
+      "detail": "Found expected fragment: '15'",
+      "answer": "Balancer cilia spontaneously oscillate at approximately **15 Hz**.",
+      "sources": [
+        "PIEZO_provides_an_ancient_molecular_framework_for_.pdf"
+      ]
+    },
+    {
+      "id": "muscle-activity-modes",
+      "question": "What two modes characterize the spontaneous activity of Mnemiopsis muscle cells?",
+      "check": "answer_fragment",
+      "passed": true,
+      "score": 1.0,
+      "detail": "Found expected fragment: 'bursting'",
+      "answer": "Based on the context, the spontaneous activity of Mnemiopsis muscle cells is characterized by two modes: **tonic** and **bursting**.\n\n- **Tonic activity mode**: cells generate action potentials without contracting or twitching, described as phenomenologically consistent with neuronal behavior.\n- **Bursting activity mode**: bursts of action potentials produce a cytoplasmic calcium concentration high enough to trigger muscle cell contractions.",
+      "sources": [
+        "Molecular_and_electrophysiological_properties_unde.pdf"
+      ]
+    },
+    {
+      "id": "retrieval-piezo-paper",
+      "question": "How does MleiPIEZO contribute to gravity detection?",
+      "check": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "detail": "All expected sources retrieved: ['PIEZO_provides_an_ancient']",
+      "answer": "Based on the context, MleiPIEZO contributes to gravity detection through its role in statocyst function. The evidence for this comes from the finding that Yoda1 (a mammalian PIEZO agonist) acts as an **inhibitor** of MleiPIEZO, and this inhibition **reduces FM1-43 uptake and reduces beating of balancer and comb plate cilia**.\n\nThe text states: \"This result implies that MleiPIEZO plays a critical role in statocyst function and is therefore essential for gravity detection and posture control.\"\n\nAdditionally, the discussion describes a \"working model\" in which PIEZO serves as a mechanosensory transduction channel in ctenophore balancers\u2014the cells within the statocyst. The statocyst is the sensory structure containing the statolith (a gravity-sensing structure) and balancer cilia. The model suggests that:\n\n- Balancer cells may operate near a **Hopf bifurcation** (similar to vestibular hair cells), which would make them \"exquisitely sensitive to changes in statolith position caused by minute radial displacements of the aboral-oral axis, allowing ctenophores to precisely control their orientation.\"\n- MleiPIEZO is proposed to detect these mechanical displacements caused by the statolith's position relative to gravity, translating them into a cellular signal that affects ciliary beating of the balancers.\n\nHowever, the context notes that the precise **subcellular localization** of MleiPIEZO within balancer cells (e.g., whether it is located within cilia or on adjacent membranes) remains unknown, and this is identified as an open question necessary for fully validating this working model. Direct electrophysiological recordings of native MleiPIEZO in balancers are also stated as still needed to confirm the channel's exact functional role in vivo.",
+      "sources": [
+        "PIEZO_provides_an_ancient_molecular_framework_for_.pdf"
+      ]
+    },
+    {
+      "id": "retrieval-electrophysiology-paper",
+      "question": "How was calcium signaling measured in Mnemiopsis muscle cells?",
+      "check": "retrieval",
+      "passed": true,
+      "score": 1.0,
+      "detail": "All expected sources retrieved: ['Molecular_and_electrophysiological']",
+      "answer": "Based on the context, calcium signaling in *Mnemiopsis* muscle cells was measured using the following approach:\n\n1. **Fluorescent calcium probes**: Cells were loaded with membrane-permeable calcium-sensitive fluorescent probes\u2014specifically **Fluo-4 AM** and **Calbryte-520 AM** (acetoxymethyl-neutralized versions), using a specially developed loading method to improve dye uptake.\n\n2. **Primary cell culture**: A primary cell culture preparation was developed that kept *Mnemiopsis* cells viable for many hours, allowing extended observation.\n\n3. **Direct dialysis**: In some experiments, **Fluo-4 pentapotassium salt** was dialyzed directly into dissociated muscle cells (rather than using the AM ester form).\n\n4. **Simultaneous electrophysiological recordings**: Calcium imaging was paired with electrophysiological techniques to correlate calcium signals with electrical activity:\n   - **Voltage-clamp recordings** were used to apply depolarizing voltage steps (200 ms, in 5\u201310 mV increments) to activate voltage-gated currents while simultaneously recording calcium signals.\n   - **Extracellular loose patch recording** was used to monitor spontaneous action potential (spike) activity in a minimally disruptive way, while simultaneously imaging Fluo-4 calcium signals in the same cells.\n\nThis combined approach allowed researchers to compare calcium signal dynamics (via fluorescence imaging) directly against electrical activity (via patch-clamp/loose patch recordings) in the same muscle cells, revealing that calcium signals correlated well with tonic spiking and bursting activity patterns, including muscle cell contractions during bursts.",
+      "sources": [
+        "Molecular_and_electrophysiological_properties_unde.pdf"
+      ]
+    }
+  ]
+}
