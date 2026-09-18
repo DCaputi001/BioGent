@@ -59,6 +59,12 @@ data/
 **/.terraform/
 *.tfstate
 *.tfstate.*
+# Saved plans, whatever they are called. A plan file is a build artifact, and a
+# plan generated once resources exist embeds their attributes IN PLAINTEXT --
+# including random_password values such as the ALB origin secret. "*.tfplan"
+# alone missed the conventional extensionless name.
+tfplan
+tfplan.*
 *.tfplan
 terraform.tfvars
 *.auto.tfvars

@@ -83,6 +83,21 @@ variable "github_repo" {
   default     = "DCaputi001/BioGent"
 }
 
+variable "github_repo_immutable" {
+  description = <<-EOT
+    The same repository in GitHub's immutable OIDC subject format,
+    "owner@<owner_id>/repo@<repo_id>". GitHub now issues tokens whose subject
+    embeds the numeric ids so the identity survives a rename, and a trust
+    policy matching only the human-readable name is rejected with
+    "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+
+    Find the ids in the CloudTrail AssumeRoleWithWebIdentity event, or via
+    `gh api repos/OWNER/REPO --jq '{owner: .owner.id, repo: .id}'`.
+  EOT
+  type        = string
+  default     = "DCaputi001@173270718/BioGent@1359512510"
+}
+
 variable "create_github_oidc_provider" {
   description = "Create the GitHub OIDC provider, or reference one already in this account. AWS permits only one per URL, so set this false if another workload created it."
   type        = bool
