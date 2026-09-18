@@ -42,10 +42,19 @@ data "aws_iam_policy_document" "github_assume" {
     # Scoped to this repository. Without this condition ANY GitHub repository
     # in the world could assume the role -- the single most common and most
     # damaging mistake in GitHub OIDC setups.
+    #
+    # Both subject formats are listed because GitHub issues the immutable one
+    # ("owner@<owner_id>/repo@<repo_id>") in this repository's tokens, while
+    # much of the published guidance still shows the plain "owner/repo" form.
+    # Listing both explicitly, rather than loosening the pattern with extra
+    # wildcards, keeps the match anchored to this repository alone.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      values = [
+        "repo:${var.github_repo}:*",
+        "repo:${var.github_repo_immutable}:*",
+      ]
     }
   }
 }
