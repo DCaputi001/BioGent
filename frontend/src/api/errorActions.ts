@@ -11,12 +11,22 @@
 
 import type { ApiError } from './types'
 
-export type ErrorRemedy = 'fix-key' | 'add-credit' | 'retry' | 'none'
+export type ErrorRemedy = 'fix-key' | 'add-credit' | 'retry' | 'sign-in' | 'none'
 
 /** Codes where the key itself is the problem, so retrying is pointless. */
 const KEY_PROBLEM_CODES = new Set(['invalid_api_key', 'missing_api_key', 'permission_denied'])
 
+/**
+ * Codes meaning the session is gone, not the key.
+ *
+ * Both of these are 401s, as is a rejected Anthropic key, which is why this
+ * branches on the code rather than the status: offering "use a different key"
+ * to someone whose session simply expired sends them to fix the wrong thing.
+ */
+const SESSION_PROBLEM_CODES = new Set(['missing_auth', 'invalid_token'])
+
 export function remedyFor(error: ApiError): ErrorRemedy {
+  if (SESSION_PROBLEM_CODES.has(error.code)) return 'sign-in'
   if (KEY_PROBLEM_CODES.has(error.code)) return 'fix-key'
   if (error.code === 'insufficient_credit') return 'add-credit'
   // retryable covers rate limits, upstream trouble, and an unreachable

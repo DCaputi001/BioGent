@@ -19,6 +19,16 @@ describe('remedyFor', () => {
     },
   )
 
+  it.each(['missing_auth', 'invalid_token'])(
+    'treats %s as a session problem, not a key problem',
+    (code) => {
+      // Both of these arrive as 401s, exactly like a rejected Anthropic key.
+      // Branching on status instead of code would send a researcher whose
+      // session merely expired off to replace a key that is perfectly fine.
+      expect(remedyFor(error(code, false, 401))).toBe('sign-in')
+    },
+  )
+
   it('sends an empty balance to billing rather than offering a retry', () => {
     expect(remedyFor(error('insufficient_credit', false, 402))).toBe('add-credit')
   })

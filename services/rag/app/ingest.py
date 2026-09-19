@@ -79,7 +79,19 @@ def _build_chunker(embedding_model: str = config.EMBEDDING_MODEL) -> HybridChunk
     return HybridChunker(tokenizer=hf_tokenizer)
 
 
+def _chunk_metadata(source_name: str, user_id: str) -> dict:
+    """The metadata written onto every chunk, whatever produced it.
+
+    One definition for both loaders so the two cannot drift. The owner key is
+    the one query.owner_filter() matches on, and both sides take its name from
+    config.OWNER_METADATA_KEY — a chunk written without it is retrievable by
+    nobody, which is silent rather than loud.
+    """
+    return {"source": source_name, config.OWNER_METADATA_KEY: user_id}
+
+
 def load_and_chunk_pdfs(
+    user_id: str,
     data_dir: Path = config.DATA_DIR,
     embedding_model: str = config.EMBEDDING_MODEL,
 ) -> list[LCDocument]:
@@ -89,6 +101,9 @@ def load_and_chunk_pdfs(
     (the vector store, the retriever in query.py) is unchanged by this
     swap — the change is isolated to how chunks get produced, not how
     they're stored or searched.
+
+    Every chunk is stamped with user_id, which is what makes it retrievable by
+    that researcher and invisible to everyone else.
     """
     chunker = _build_chunker(embedding_model)
     documents: list[LCDocument] = []
@@ -104,13 +119,14 @@ def load_and_chunk_pdfs(
             # still carries the section context it came from.
             text = chunker.contextualize(chunk)
             documents.append(
-                LCDocument(page_content=text, metadata={"source": pdf_path.name})
+                LCDocument(page_content=text, metadata=_chunk_metadata(pdf_path.name, user_id))
             )
 
     return documents
 
 
 def load_and_chunk_plaintext(
+    user_id: str,
     data_dir: Path = config.DATA_DIR,
     chunk_size: int = config.CHUNK_SIZE,
     chunk_overlap: int = config.CHUNK_OVERLAP,
@@ -132,7 +148,7 @@ def load_and_chunk_plaintext(
         raw_text = path.read_text(encoding="utf-8")  # Windows cp1252 fix, from the small project
         for chunk_text in splitter.split_text(raw_text):
             documents.append(
-                LCDocument(page_content=chunk_text, metadata={"source": path.name})
+                LCDocument(page_content=chunk_text, metadata=_chunk_metadata(path.name, user_id))
             )
 
     return documents
@@ -201,6 +217,7 @@ def build_vector_store(
 
 
 def run_ingestion(
+    user_id: str,
     data_dir: Path = config.DATA_DIR,
     database_url: str | None = None,
     collection_name: str = config.COLLECTION_NAME,
@@ -208,15 +225,23 @@ def run_ingestion(
 ) -> dict:
     """Full ingestion pipeline. Returns counts for logging/verification.
 
+    Every chunk is written owned by user_id and is retrievable only by them.
+
     reset=False (default): add to whatever's already in the collection.
     reset=True: wipe the collection first, then ingest — a clean rebuild.
+
+    Note that reset wipes the WHOLE collection, not just this user's documents:
+    it predates per-user ownership and is an operator's clean-rebuild tool, not
+    a per-researcher one. Scoped deletion arrives with the documents table in
+    Phase 8's upload stage (see KNOWN_ISSUES.md).
+
     database_url=None resolves it via db_credentials (Secrets Manager or local).
     """
     database_url = database_url or db_credentials.get_database_url()
     _check_database_connection(database_url)
 
-    pdf_chunks = load_and_chunk_pdfs(data_dir)
-    plaintext_chunks = load_and_chunk_plaintext(data_dir)
+    pdf_chunks = load_and_chunk_pdfs(user_id, data_dir)
+    plaintext_chunks = load_and_chunk_plaintext(user_id, data_dir)
     chunks = pdf_chunks + plaintext_chunks
 
     if not chunks:
@@ -239,6 +264,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Ingest documents into the RAG vector store.")
     parser.add_argument(
+        "--user-id",
+        required=True,
+        help="Who will own these documents: a Cognito sub, or the eval fixture id "
+        "(RAG_EVAL_USER_ID) when seeding the eval corpus. Only this owner can "
+        "retrieve them.",
+    )
+    parser.add_argument(
         "--reset",
         action="store_true",
         help="Wipe the collection before ingesting (a full clean rebuild), "
@@ -258,7 +290,9 @@ if __name__ == "__main__":
         with tempfile.TemporaryDirectory(prefix="biogent-s3-") as download_dir:
             downloaded = storage.download_documents_from_s3(Path(download_dir))
             print(f"Downloaded {len(downloaded)} documents from s3://{config.S3_BUCKET}")
-            result = run_ingestion(data_dir=Path(download_dir), reset=args.reset)
+            result = run_ingestion(
+                args.user_id, data_dir=Path(download_dir), reset=args.reset
+            )
     else:
-        result = run_ingestion(reset=args.reset)
+        result = run_ingestion(args.user_id, reset=args.reset)
     print(result)

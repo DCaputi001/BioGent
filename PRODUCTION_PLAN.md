@@ -104,7 +104,23 @@ Bring LangSmith in properly now that there's a deployed service worth monitoring
 > **Runs before Phase 7.** Decided after the Phase 4 checkpoint passed: getting real researchers onto the RAG service teaches more than building a second service nobody is using yet, and it is what makes document upload possible. Phase numbers are deliberately NOT renumbered — they are referenced as identifiers from `ARCHITECTURE.md`, `KNOWN_ISSUES.md`, `AGENTS.md`, and commit history, so renumbering would silently repoint all of them. Read the order as 5 → 6 → 8 → 7 → 9 → 10.
  
 Move from "anyone with the URL can use it" to real accounts.
- 
+
+> **Split into two stages**, because the five deliverables below are roughly
+> five PRs and the first three are independently useful: a researcher with an
+> account and isolated documents can work through the operator-run ingest path
+> while upload is still being built.
+>
+> - **Stage 1 (done):** Cognito, login-gated frontend, per-user isolation via a
+>   `user_id` key on every chunk filtered on every retrieval, and a dedicated
+>   eval identity so the regression suite survives the scoping change.
+> - **Stage 2:** the `documents` table (and with it the project's first schema
+>   migration), researcher-facing upload, and the SQS + Fargate ingestion
+>   workers. The duplicate-chunk and OCR gaps in `KNOWN_ISSUES.md` are fixed
+>   here, not in stage 1 — nothing writes to a `documents` table meaningfully
+>   until researchers upload their own files.
+>
+> The checkpoint below needs both stages; stage 1 delivers its isolation half.
+
 - Amazon Cognito set up for user accounts/sessions
 - Frontend gated behind login
 - Per-user data isolation confirmed (one researcher's documents/queries aren't visible to another, unless explicitly shared)

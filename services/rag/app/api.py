@@ -11,6 +11,12 @@ fall back to a server-side ANTHROPIC_API_KEY: a server that answers without a
 caller's key would silently bill the operator, which is the cost model this
 project explicitly rejected (see ARCHITECTURE.md, "how the LLM gets paid for").
 
+AUTH: /ask also requires a Cognito access token (app/auth.py), which is a
+separate credential answering a separate question — the token decides whose
+documents are searched, the key decides whose Anthropic account pays. Both are
+required, and the user id comes from the verified token rather than from the
+request body, so a caller cannot ask for someone else's documents.
+
 Run locally:
     uv run uvicorn app.api:app --reload --port 8000
 """
@@ -24,6 +30,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app import config, query
+from app.auth import require_user
 from app.errors import ApiError, ErrorResponse, missing_api_key, to_api_error
 
 logger = logging.getLogger(__name__)
@@ -51,7 +58,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", API_KEY_HEADER],
+    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER],
 )
 
 
@@ -126,11 +133,16 @@ def health() -> dict:
         503: {"model": ErrorResponse},
     },
 )
-def ask(request: AskRequest, api_key: str = Depends(require_api_key)) -> AskResponse:
-    """Answer one question from the ingested documents, on the caller's key.
+def ask(
+    request: AskRequest,
+    user_id: str = Depends(require_user),
+    api_key: str = Depends(require_api_key),
+) -> AskResponse:
+    """Answer one question from the caller's own documents, on the caller's key.
 
-    get_retriever() is cached process-wide, so the embedding model loads on the
-    first request only.
+    The retriever is scoped to user_id, which comes from the verified token and
+    never from the request, so one researcher cannot reach another's documents.
+    The embedding model behind it is shared and loads on the first request only.
 
     Every failure below becomes an ApiError, so a rejected key or an
     unreachable database reaches the researcher as one readable sentence rather
@@ -140,8 +152,8 @@ def ask(request: AskRequest, api_key: str = Depends(require_api_key)) -> AskResp
     try:
         result = query.ask_with_context(
             request.question,
+            retriever=query.get_retriever(user_id),
             anthropic_api_key=api_key,
-            retriever=query.get_retriever(),
         )
     except Exception as exc:
         error = to_api_error(exc)

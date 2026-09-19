@@ -16,7 +16,7 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 **Why deferred:** Properly fixing this means tracking "which document is this" per user, so a re-ingested file can be matched to its prior chunks and those specifically removed/replaced. That's tied to per-user document management, which doesn't fully exist until real accounts/multi-tenancy land.
 
-**Unblocked by:** Phase 8 (Auth & Multi-User) in `PRODUCTION_PLAN.md` — once documents are tracked per-user with real identity (e.g. a `documents` table row per uploaded file, keyed by `user_id` + a content hash or filename), re-ingestion can look up "does this user already have this document" and replace just that document's chunks instead of duplicating or wiping everything.
+**Unblocked by:** Phase 8's **upload stage** in `PRODUCTION_PLAN.md`. Phase 8's first stage added the identity half — every chunk now carries a `user_id` — but not the `documents` table, because nothing writes to it meaningfully until researchers upload their own files. Once a row exists per uploaded file (keyed by `user_id` plus a content hash or filename), re-ingestion can look up "does this user already have this document" and replace just that document's chunks instead of duplicating or wiping everything.
 
 **Workaround until then:** `reset=True` on `run_ingestion()` for a full clean rebuild when a duplicate is suspected — same manual "wipe and redo" habit as the small project's `chroma_db` deletion, just via a function argument instead of deleting a folder.
 
@@ -30,7 +30,7 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 **Why deferred:** Doing this properly means detecting per document whether a text layer exists and enabling OCR only for the ones that need it, rather than a single global flag. That detection belongs at upload time, alongside the per-document tracking that doesn't exist yet.
 
-**Unblocked by:** Phase 8 (Auth & Multi-User) in `PRODUCTION_PLAN.md` — the same `documents` table that fixes re-ingestion duplicates is where a per-document "needs OCR" decision would live, set once at upload instead of guessed globally at ingest time.
+**Unblocked by:** Phase 8's **upload stage** in `PRODUCTION_PLAN.md` — the same `documents` table that fixes re-ingestion duplicates is where a per-document "needs OCR" decision would live, set once at upload instead of guessed globally at ingest time. Phase 8's first stage did not add that table; see the entry above.
 
 **Workaround until then:** Set `RAG_DO_OCR=true` in `services/rag/.env` when ingesting scanned documents, and back to `false` afterward.
 
@@ -64,17 +64,17 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 ---
 
-## The eval harness assumes one shared corpus, which Phase 8's user isolation will hide
+## The eval corpus has to be re-seeded by hand after a reset
 
-**Where:** `services/rag/evals/` — `run_case()` in `run_evals.py`, and every `retrieval` / `answer_fragment` case in `cases.py`
+**Where:** `services/rag/evals/run_evals.py` — `build_eval_retriever()` / `app/ingest.py --user-id`
 
-**What's incomplete:** Eval cases retrieve through the default path, which today searches one shared collection holding the two ctenophore papers. Cases assert against that material directly: `yoda1-inhibits-mleipiezo` expects the word "inhibit", `retrieval-piezo-paper` expects a named source document. Phase 8 adds a `user_id` column to every row and filters every query by it (`ARCHITECTURE.md` — Per-user data and persistence). An eval run has no authenticated user, so that filter will match nothing, retrieval will come back empty, and every one of these cases will fail — for a reason that has nothing to do with retrieval or answer quality. A whole-suite failure that looks like a catastrophic regression but is only a scoping change is the worst possible signal from a regression harness.
+**What's incomplete:** Retrieval is now filtered by owner, and the eval harness runs as `RAG_EVAL_USER_ID` (default `eval-fixture`), which owns its own copy of the two ctenophore papers. That resolved the scoping problem, but the seeding is still a manual step: nothing in the repo recreates that corpus automatically, and `run_ingestion(reset=True)` wipes the whole collection rather than one owner's documents. So a clean rebuild silently takes the eval corpus with it, and the next eval run fails wholesale until someone re-runs the seed command.
 
-**Why deferred:** The fix depends on a decision Phase 8 hasn't made yet. If isolation is a metadata filter on a shared collection, the harness needs an eval `user_id` to filter by. If it is a collection per user or per project, it needs a collection name instead. Building the seam now means guessing, and a seam pointed at the wrong mechanism is worse than none — it reads as handled while still breaking. A first attempt at this (a `RAG_EVAL_COLLECTION_NAME` setting) was reverted for exactly that reason.
+**Why deferred:** Per-owner deletion needs the `documents` table, which lands with upload in Phase 8's second stage. Until then `reset` is a blunt operator tool and re-seeding is one command.
 
-**Unblocked by:** Phase 8 (Auth & Multi-User) in `PRODUCTION_PLAN.md`, specifically the moment the isolation mechanism is chosen. The work then is: create a dedicated eval user (or project) owning a seeded, version-controlled copy of the eval corpus, and give the harness a way to run as that identity. Seeding matters as much as scoping — cases asserting on specific sentences need a corpus that cannot drift when a researcher re-uploads something.
+**Unblocked by:** Phase 8's upload stage, which brings per-document tracking and therefore scoped deletion — the same table the two entries above wait on.
 
-**Workaround until then:** None needed before Phase 8 lands. When it does, expect the suite to fail wholesale on the first run and treat that as the scoping gap, not a retrieval regression, until the eval identity exists.
+**Workaround until then:** After any `--reset`, re-seed with `uv run python -m app.ingest --reset --user-id eval-fixture`, then re-ingest your own documents additively. If the whole suite fails at once, check the corpus exists before suspecting a retrieval regression.
 
 ---
 

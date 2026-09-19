@@ -39,6 +39,26 @@ output "github_actions_role_arn" {
   value       = aws_iam_role.github_actions.arn
 }
 
+output "cognito_user_pool_id" {
+  description = "Set as RAG_COGNITO_USER_POOL_ID for the API. Not a secret."
+  value       = aws_cognito_user_pool.main.id
+}
+
+output "cognito_client_id" {
+  description = "Set as VITE_COGNITO_CLIENT_ID and RAG_COGNITO_CLIENT_ID. A public SPA client id, not a secret."
+  value       = aws_cognito_user_pool_client.web.id
+}
+
+output "cognito_authority" {
+  description = "OIDC issuer the frontend discovers sign-in endpoints from. Set as VITE_COGNITO_AUTHORITY."
+  value       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+}
+
+output "cognito_hosted_ui_domain" {
+  description = "The hosted sign-in page's domain. Needed for sign-OUT, which is not part of OIDC discovery."
+  value       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
+
 output "alb_dns_name" {
   description = "For verification only: hitting this directly should return 403."
   value       = aws_lb.main.dns_name

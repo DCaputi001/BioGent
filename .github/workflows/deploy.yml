@@ -121,6 +121,13 @@ jobs:
           # Relative, not absolute: CloudFront serves the app and the API from
           # one domain, so the request is same-origin and needs no host.
           VITE_API_BASE_URL: /api
+          # Cognito identifiers, from `terraform output`. Repository variables
+          # rather than secrets: a public SPA client id and an issuer URL are
+          # both readable in the built bundle anyway. Kept out of
+          # .env.production so recreating the user pool does not need a commit.
+          VITE_COGNITO_AUTHORITY: ${{ vars.COGNITO_AUTHORITY }}
+          VITE_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          VITE_COGNITO_HOSTED_UI_DOMAIN: ${{ vars.COGNITO_HOSTED_UI_DOMAIN }}
         run: |
           npm ci
           npm run build

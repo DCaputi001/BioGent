@@ -65,6 +65,7 @@ async function toApiError(response: Response): Promise<ApiError> {
 export async function askQuestion(
   question: string,
   apiKey: string,
+  accessToken: string,
   signal?: AbortSignal,
 ): Promise<AskResponse> {
   let response: Response
@@ -73,6 +74,9 @@ export async function askQuestion(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Two credentials answering two questions: the bearer token says whose
+        // documents to search, the key says whose Anthropic account pays.
+        Authorization: `Bearer ${accessToken}`,
         [API_KEY_HEADER]: apiKey,
       },
       body: JSON.stringify({ question }),

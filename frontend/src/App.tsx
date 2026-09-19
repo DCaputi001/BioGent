@@ -1,18 +1,25 @@
 // App.tsx
-// Composes the query loop: provide a key, ask a question, read the grounded
-// answer. Owns the request lifecycle and which view is showing; the pieces
-// below own their own inputs.
+// Composes the query loop: sign in, provide a key, ask a question, read the
+// grounded answer. Owns the request lifecycle and which view is showing; the
+// pieces below own their own inputs.
+//
+// Two separate credentials are in play and neither replaces the other: the
+// Cognito session decides whose documents are searched, the Anthropic key
+// decides whose account pays for the answer.
 
 import { useRef, useState } from 'react'
+import { useAuth } from 'react-oidc-context'
 import './App.css'
 import { askQuestion } from './api/client'
 import { ApiError } from './api/types'
 import type { AskResponse } from './api/types'
+import { hostedSignOutUrl, isAuthConfigured } from './auth/oidcConfig'
 import { AnswerPanel } from './components/AnswerPanel'
 import { ApiKeyPanel } from './components/ApiKeyPanel'
 import { ErrorBanner } from './components/ErrorBanner'
 import { HelpPage } from './components/HelpPage'
 import { QuestionForm } from './components/QuestionForm'
+import { SignInPanel } from './components/SignInPanel'
 import { useApiKey } from './hooks/useApiKey'
 
 const UNEXPECTED_ERROR = new ApiError(
@@ -22,7 +29,15 @@ const UNEXPECTED_ERROR = new ApiError(
   0,
 )
 
+const SIGNED_OUT_ERROR = new ApiError(
+  'missing_auth',
+  'Your session has ended. Sign in again to continue.',
+  false,
+  401,
+)
+
 function App() {
+  const auth = useAuth()
   const keyState = useApiKey()
   const [showHelp, setShowHelp] = useState(false)
   const [pending, setPending] = useState(false)
@@ -36,6 +51,14 @@ function App() {
   const inFlight = useRef<AbortController | null>(null)
 
   async function runQuestion(question: string) {
+    // Read per question rather than once at render: a token refreshed mid-session
+    // means the value captured at render time is already stale.
+    const accessToken = auth.user?.access_token
+    if (!accessToken) {
+      setError(SIGNED_OUT_ERROR)
+      return
+    }
+
     inFlight.current?.abort()
     const controller = new AbortController()
     inFlight.current = controller
@@ -46,7 +69,7 @@ function App() {
     setAnswer(null)
 
     try {
-      const result = await askQuestion(question, keyState.apiKey, controller.signal)
+      const result = await askQuestion(question, keyState.apiKey, accessToken, controller.signal)
       setAnswer(result)
     } catch (caught) {
       // An abort means a newer question took over, so the UI belongs to that
@@ -68,13 +91,59 @@ function App() {
     setAnswer(null)
   }
 
+  /**
+   * Drop the local session, then hand off to Cognito to end its own.
+   *
+   * The key goes too: it belongs to the person signing out, and leaving it in
+   * sessionStorage would hand it to whoever signs in next on this tab.
+   */
+  function handleSignOut() {
+    keyState.clearKey()
+    void auth.removeUser()
+    window.location.href = hostedSignOutUrl()
+  }
+
+  // Reachable signed out on purpose: this is the page explaining how to get an
+  // Anthropic key, which a researcher may well want to read first.
   if (showHelp) return <HelpPage onBack={() => setShowHelp(false)} />
+
+  if (auth.isLoading) {
+    return (
+      <main>
+        <p aria-live="polite">Checking your sign-in...</p>
+      </main>
+    )
+  }
+
+  if (!auth.isAuthenticated) {
+    return (
+      <main>
+        <header>
+          <h1>BioGent</h1>
+          <p>Ask questions about your research documents and get grounded answers.</p>
+        </header>
+
+        <SignInPanel
+          configured={isAuthConfigured}
+          error={auth.error}
+          onSignIn={() => void auth.signinRedirect()}
+          onOpenHelp={() => setShowHelp(true)}
+        />
+      </main>
+    )
+  }
 
   return (
     <main>
       <header>
         <h1>BioGent</h1>
         <p>Ask questions about your research documents and get grounded answers.</p>
+        <p className="hint">
+          Signed in as {auth.user?.profile.email ?? 'your account'}.{' '}
+          <button type="button" className="link" onClick={handleSignOut}>
+            Sign out
+          </button>
+        </p>
       </header>
 
       <ApiKeyPanel keyState={keyState} onOpenHelp={() => setShowHelp(true)} />
@@ -84,6 +153,7 @@ function App() {
         onRetry={() => runQuestion(lastQuestion)}
         onUpdateKey={handleUpdateKey}
         onOpenHelp={() => setShowHelp(true)}
+        onSignIn={() => void auth.signinRedirect()}
       />
       <AnswerPanel pending={pending} answer={answer} />
     </main>

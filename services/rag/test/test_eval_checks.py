@@ -203,6 +203,10 @@ def test_context_precision_handles_retrieving_nothing():
 
 # --- run_case error isolation ------------------------------------------------
 
+# Passed in so run_case does not fall back to build_eval_retriever(), which
+# would load the embedding model and open a real database connection.
+STUB_RETRIEVER = "stub-retriever"
+
 
 class ExplodingJudge:
     def invoke(self, prompt: str):
@@ -213,24 +217,24 @@ def test_a_judge_failure_becomes_a_failed_case_not_a_crashed_run(monkeypatch):
     """One rate-limited judge call should not discard every result before it."""
     monkeypatch.setattr(
         "evals.run_evals.ask_with_context",
-        lambda q: {"answer": "a", "context": "c", "sources": [], "documents": []},
+        lambda q, retriever=None: {"answer": "a", "context": "c", "sources": [], "documents": []},
     )
     case = EvalCase(id="x", question="q", check="faithfulness", uses_judge=True)
 
-    result = run_case(case, ExplodingJudge())
+    result = run_case(case, ExplodingJudge(), STUB_RETRIEVER)
 
     assert result["passed"] is False
     assert "judge API is down" in result["detail"]
 
 
 def test_an_unreachable_chain_becomes_a_failed_case(monkeypatch):
-    def boom(_question):
+    def boom(_question, retriever=None):
         raise ConnectionError("database unreachable")
 
     monkeypatch.setattr("evals.run_evals.ask_with_context", boom)
     case = EvalCase(id="x", question="q", check="refusal")
 
-    result = run_case(case, None)
+    result = run_case(case, None, STUB_RETRIEVER)
 
     assert result["passed"] is False
     assert "database unreachable" in result["detail"]
@@ -239,11 +243,11 @@ def test_an_unreachable_chain_becomes_a_failed_case(monkeypatch):
 def test_unknown_check_type_is_reported_rather_than_silently_passing(monkeypatch):
     monkeypatch.setattr(
         "evals.run_evals.ask_with_context",
-        lambda q: {"answer": "a", "context": "c", "sources": [], "documents": []},
+        lambda q, retriever=None: {"answer": "a", "context": "c", "sources": [], "documents": []},
     )
     case = EvalCase(id="x", question="q", check="typo_check")
 
-    result = run_case(case, None)
+    result = run_case(case, None, STUB_RETRIEVER)
 
     assert result["passed"] is False
     assert "Unknown check type" in result["detail"]

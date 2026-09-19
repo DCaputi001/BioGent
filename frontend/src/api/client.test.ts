@@ -10,6 +10,7 @@ import { ApiError } from './types'
 
 const API_KEY = 'sk-ant-test-key'
 const QUESTION = 'What role does PIEZO play in mechanosensation?'
+const ACCESS_TOKEN = 'header.payload.signature'
 
 // Typed with fetch's own parameters so mock.calls is a [url, init] tuple
 // rather than an empty one, and the assertions below need no cast.
@@ -45,24 +46,28 @@ describe('askQuestion', () => {
   it('sends the key as a header and the question as JSON', async () => {
     const fetchMock = mockFetch(jsonResponse({ answer: 'PIEZO transduces force.', sources: [] }))
 
-    await askQuestion(QUESTION, API_KEY)
+    await askQuestion(QUESTION, API_KEY, ACCESS_TOKEN)
 
     const [url, init] = fetchMock.mock.calls[0]
     const headers = init.headers as Record<string, string>
 
     expect(headers['X-Anthropic-Api-Key']).toBe(API_KEY)
+    // Both credentials travel, and they are not interchangeable: the token
+    // scopes retrieval to this researcher, the key pays for the answer.
+    expect(headers['Authorization']).toBe(`Bearer ${ACCESS_TOKEN}`)
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({ question: QUESTION })
-    // The key must never ride in the URL, where server logs and browser
+    // Neither credential may ride in the URL, where server logs and browser
     // history would capture it.
     expect(url).not.toContain(API_KEY)
+    expect(url).not.toContain(ACCESS_TOKEN)
     expect(url.endsWith('/ask')).toBe(true)
   })
 
   it('returns the answer and its sources', async () => {
     mockFetch(jsonResponse({ answer: 'PIEZO transduces force.', sources: ['piezo.pdf'] }))
 
-    const result = await askQuestion(QUESTION, API_KEY)
+    const result = await askQuestion(QUESTION, API_KEY, ACCESS_TOKEN)
 
     expect(result).toEqual({ answer: 'PIEZO transduces force.', sources: ['piezo.pdf'] })
   })
@@ -81,7 +86,7 @@ describe('askQuestion', () => {
       ),
     )
 
-    const error = await askQuestion(QUESTION, API_KEY).catch((caught) => caught)
+    const error = await askQuestion(QUESTION, API_KEY, ACCESS_TOKEN).catch((caught) => caught)
 
     expect(error).toBeInstanceOf(ApiError)
     expect(error.code).toBe('invalid_api_key')
@@ -94,7 +99,7 @@ describe('askQuestion', () => {
     // What a proxy or CloudFront returns when it fails before reaching the app.
     mockFetch(new Response('<html>502 Bad Gateway</html>', { status: 502 }))
 
-    const error = await askQuestion(QUESTION, API_KEY).catch((caught) => caught)
+    const error = await askQuestion(QUESTION, API_KEY, ACCESS_TOKEN).catch((caught) => caught)
 
     expect(error).toBeInstanceOf(ApiError)
     expect(error.code).toBe('unreadable_response')
@@ -104,7 +109,7 @@ describe('askQuestion', () => {
   it('reports an unreachable service rather than throwing a raw network error', async () => {
     mockFetchRejection(new TypeError('Failed to fetch'))
 
-    const error = await askQuestion(QUESTION, API_KEY).catch((caught) => caught)
+    const error = await askQuestion(QUESTION, API_KEY, ACCESS_TOKEN).catch((caught) => caught)
 
     expect(error).toBeInstanceOf(ApiError)
     expect(error.code).toBe('service_unreachable')
@@ -114,7 +119,7 @@ describe('askQuestion', () => {
   it('lets an abort through untouched, so a superseded question stays silent', async () => {
     mockFetchRejection(new DOMException('The operation was aborted.', 'AbortError'))
 
-    const error = await askQuestion(QUESTION, API_KEY).catch((caught) => caught)
+    const error = await askQuestion(QUESTION, API_KEY, ACCESS_TOKEN).catch((caught) => caught)
 
     expect(error).toBeInstanceOf(DOMException)
     expect(error.name).toBe('AbortError')

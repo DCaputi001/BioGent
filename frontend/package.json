@@ -12,8 +12,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "oidc-client-ts": "^3.5.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-oidc-context": "^3.3.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",

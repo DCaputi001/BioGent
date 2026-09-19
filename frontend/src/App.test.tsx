@@ -6,16 +6,42 @@
 
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useAuth } from 'react-oidc-context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { askQuestion } from './api/client'
 import { ApiError } from './api/types'
 
 vi.mock('./api/client', () => ({ askQuestion: vi.fn() }))
+vi.mock('react-oidc-context', () => ({ useAuth: vi.fn() }))
+
+// Stubbed because the real module reads VITE_COGNITO_* at import time, which
+// are unset under test — the app would then correctly render its "sign-in is
+// not configured" notice in place of every screen these tests exercise.
+vi.mock('./auth/oidcConfig', () => ({
+  isAuthConfigured: true,
+  oidcConfig: {},
+  hostedSignOutUrl: () => 'https://example.auth.us-east-1.amazoncognito.com/logout',
+}))
 
 const askQuestionMock = vi.mocked(askQuestion)
+const useAuthMock = vi.mocked(useAuth)
 const KEY = 'sk-ant-test-key'
+const TOKEN = 'header.payload.signature'
 const QUESTION = 'What role does PIEZO play in mechanosensation?'
+
+/** The auth state for a researcher who is signed in and has a live token. */
+function signedIn(overrides: Record<string, unknown> = {}) {
+  return {
+    isLoading: false,
+    isAuthenticated: true,
+    user: { access_token: TOKEN, profile: { email: 'researcher@example.org' } },
+    error: undefined,
+    signinRedirect: vi.fn(),
+    removeUser: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  } as unknown as ReturnType<typeof useAuth>
+}
 
 async function provideKey(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/your anthropic api key/i), KEY)
@@ -24,6 +50,7 @@ async function provideKey(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   askQuestionMock.mockReset()
+  useAuthMock.mockReturnValue(signedIn())
 })
 
 describe('App', () => {
@@ -52,7 +79,7 @@ describe('App', () => {
     expect(screen.getByText('piezo.pdf')).toBeInTheDocument()
     expect(screen.getByText('mechanosensation.pdf')).toBeInTheDocument()
     // The key the researcher typed is the key the request carried.
-    expect(askQuestionMock).toHaveBeenCalledWith(QUESTION, KEY, expect.any(AbortSignal))
+    expect(askQuestionMock).toHaveBeenCalledWith(QUESTION, KEY, TOKEN, expect.any(AbortSignal))
   })
 
   it('masks the key once saved rather than displaying it back', async () => {
@@ -131,7 +158,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /try again/i }))
 
     expect(await screen.findByText('PIEZO transduces force.')).toBeInTheDocument()
-    expect(askQuestionMock).toHaveBeenLastCalledWith(QUESTION, KEY, expect.any(AbortSignal))
+    expect(askQuestionMock).toHaveBeenLastCalledWith(QUESTION, KEY, TOKEN, expect.any(AbortSignal))
   })
 
   it('tells a local user how to start the API when it is unreachable', async () => {
@@ -159,5 +186,74 @@ describe('App', () => {
 
     await user.click(screen.getAllByRole('button', { name: /back to questions/i })[0])
     expect(screen.getByLabelText(/your anthropic api key/i)).toBeInTheDocument()
+  })
+})
+
+describe('App, signed out', () => {
+  beforeEach(() => {
+    useAuthMock.mockReturnValue(signedIn({ isAuthenticated: false, user: undefined }))
+  })
+
+  it('offers sign-in instead of the question form', () => {
+    render(<App />)
+
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument()
+    // The whole point of the gate: no route to asking anything without a session.
+    expect(screen.queryByLabelText(/ask a question/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/your anthropic api key/i)).not.toBeInTheDocument()
+  })
+
+  it('starts the Cognito redirect when sign-in is clicked', async () => {
+    const user = userEvent.setup()
+    const auth = signedIn({ isAuthenticated: false, user: undefined })
+    useAuthMock.mockReturnValue(auth)
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }))
+
+    expect(auth.signinRedirect).toHaveBeenCalled()
+  })
+
+  it('still lets a researcher read how to get an Anthropic key', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    // Deliberately reachable signed out: deciding whether to sign up at all is
+    // easier after reading what the key costs and how to get one.
+    await user.click(screen.getByRole('button', { name: /how do i get an anthropic api key/i }))
+
+    expect(
+      screen.getByRole('heading', { name: /getting an anthropic api key/i }),
+    ).toBeInTheDocument()
+  })
+
+})
+
+describe('App, expired session', () => {
+  it('offers sign-in again rather than telling the researcher to fix their key', async () => {
+    const user = userEvent.setup()
+    askQuestionMock.mockRejectedValue(
+      new ApiError('invalid_token', 'Your session has expired.', false, 401),
+    )
+    render(<App />)
+
+    await provideKey(user)
+    await user.type(screen.getByLabelText(/ask a question/i), QUESTION)
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByRole('button', { name: /sign in again/i })).toBeInTheDocument()
+    // Both are 401s; offering the key remedy here would send them to fix the
+    // wrong credential entirely.
+    expect(
+      within(alert).queryByRole('button', { name: /use a different key/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows who is signed in, with a way out', () => {
+    render(<App />)
+
+    expect(screen.getByText(/researcher@example\.org/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
   })
 })
