@@ -37,6 +37,33 @@ resource "aws_ecs_cluster" "main" {
   name = "${var.project}-cluster"
 }
 
+# Built as a local, not inline, because the LangSmith entries are conditional
+# on langsmith_secret_arn being set -- jsonencode() has no "if" of its own, so
+# the conditional has to happen in the list before encoding.
+locals {
+  rag_container_environment = concat(
+    [
+      { name = "RAG_DB_SECRET_ID", value = var.db_secret_arn },
+      { name = "RAG_DB_HOST", value = var.db_host },
+      { name = "RAG_DB_NAME", value = var.db_name },
+      { name = "RAG_S3_BUCKET", value = var.documents_bucket },
+      { name = "AWS_REGION", value = var.aws_region },
+    ],
+    var.langsmith_secret_arn != "" ? [
+      { name = "LANGSMITH_TRACING", value = "true" },
+      # Matches services/rag/.env.example's local dev default of
+      # "biogent-rag-dev" minus the "-dev" suffix, so production and local
+      # tracing share one base project name in the LangSmith dashboard rather
+      # than reading as two unrelated apps.
+      { name = "LANGSMITH_PROJECT", value = "${var.project}-rag" },
+    ] : []
+  )
+
+  rag_container_secrets = var.langsmith_secret_arn != "" ? [
+    { name = "LANGSMITH_API_KEY", valueFrom = var.langsmith_secret_arn },
+  ] : []
+}
+
 resource "aws_ecs_task_definition" "rag" {
   family                   = "${var.project}-rag"
   requires_compatibilities = ["FARGATE"]
@@ -59,13 +86,13 @@ resource "aws_ecs_task_definition" "rag" {
 
       # No password here by design: the app fetches it from Secrets Manager at
       # runtime using the task role. See services/rag/app/db_credentials.py.
-      environment = [
-        { name = "RAG_DB_SECRET_ID", value = var.db_secret_arn },
-        { name = "RAG_DB_HOST", value = var.db_host },
-        { name = "RAG_DB_NAME", value = var.db_name },
-        { name = "RAG_S3_BUCKET", value = var.documents_bucket },
-        { name = "AWS_REGION", value = var.aws_region },
-      ]
+      environment = local.rag_container_environment
+
+      # LANGSMITH_API_KEY only, when langsmith_secret_arn is set. Resolved by
+      # ECS itself using the execution role before the container starts (see
+      # iam.tf) -- unlike RAG_DB_SECRET_ID above, no application code fetches
+      # this one; it just needs to already be an environment variable.
+      secrets = local.rag_container_secrets
 
       logConfiguration = {
         logDriver = "awslogs"

@@ -22,3 +22,14 @@ rds_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
 # Set to 0 between working sessions to stop paying for Fargate. The load
 # balancer bills whether or not a task is running.
 desired_count = 1
+
+# Optional -- LangSmith tracing. Leave it unset to deploy with tracing off;
+# every LangSmith resource is conditional on this value, so an unset variable
+# produces no plan changes at all. Create the secret first, then paste the ARN
+# it returns (the random suffix is not derivable from the name):
+#   aws secretsmanager create-secret --name biogent/langsmith-api-key \
+#     --secret-string "lsv2_..." --profile biogent-admin
+#
+# Setting this registers a new task definition revision, but the running
+# service only picks it up on the next deploy workflow run -- see infra/README.md.
+# langsmith_secret_arn = "arn:aws:secretsmanager:us-east-1:396913715360:secret:biogent/langsmith-api-key-xxxxxx"

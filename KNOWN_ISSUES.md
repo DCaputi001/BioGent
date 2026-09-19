@@ -64,6 +64,20 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 ---
 
+## The eval harness assumes one shared corpus, which Phase 8's user isolation will hide
+
+**Where:** `services/rag/evals/` — `run_case()` in `run_evals.py`, and every `retrieval` / `answer_fragment` case in `cases.py`
+
+**What's incomplete:** Eval cases retrieve through the default path, which today searches one shared collection holding the two ctenophore papers. Cases assert against that material directly: `yoda1-inhibits-mleipiezo` expects the word "inhibit", `retrieval-piezo-paper` expects a named source document. Phase 8 adds a `user_id` column to every row and filters every query by it (`ARCHITECTURE.md` — Per-user data and persistence). An eval run has no authenticated user, so that filter will match nothing, retrieval will come back empty, and every one of these cases will fail — for a reason that has nothing to do with retrieval or answer quality. A whole-suite failure that looks like a catastrophic regression but is only a scoping change is the worst possible signal from a regression harness.
+
+**Why deferred:** The fix depends on a decision Phase 8 hasn't made yet. If isolation is a metadata filter on a shared collection, the harness needs an eval `user_id` to filter by. If it is a collection per user or per project, it needs a collection name instead. Building the seam now means guessing, and a seam pointed at the wrong mechanism is worse than none — it reads as handled while still breaking. A first attempt at this (a `RAG_EVAL_COLLECTION_NAME` setting) was reverted for exactly that reason.
+
+**Unblocked by:** Phase 8 (Auth & Multi-User) in `PRODUCTION_PLAN.md`, specifically the moment the isolation mechanism is chosen. The work then is: create a dedicated eval user (or project) owning a seeded, version-controlled copy of the eval corpus, and give the harness a way to run as that identity. Seeding matters as much as scoping — cases asserting on specific sentences need a corpus that cannot drift when a researcher re-uploads something.
+
+**Workaround until then:** None needed before Phase 8 lands. When it does, expect the suite to fail wholesale on the first run and treat that as the scoping gap, not a retrieval regression, until the eval identity exists.
+
+---
+
 <!--
 Template for future entries:
 

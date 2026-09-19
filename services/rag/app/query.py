@@ -153,6 +153,10 @@ def ask_with_context(
         "answer": answer,
         "context": context,
         "sources": source_names(retrieved_docs),
+        # The raw chunks, for callers that need to judge them individually --
+        # context precision scores each retrieved chunk, which the joined
+        # context string cannot support. The HTTP API ignores this key.
+        "documents": retrieved_docs,
     }
 
 if __name__ == "__main__":

@@ -114,6 +114,37 @@ there is no response at all. The listener's 403 is the second line of defense,
 reached only by a request that already comes from a CloudFront IP range but
 lacks the secret header.
 
+## LangSmith tracing (Phase 6)
+
+Optional and off by default -- `langsmith_secret_arn` defaults to `""`, and a
+`terraform plan` with it unset shows no changes at all. To turn tracing on in
+production:
+
+```powershell
+aws secretsmanager create-secret --name biogent/langsmith-api-key `
+  --secret-string "lsv2_..." --profile biogent-admin
+```
+
+Set `langsmith_secret_arn` to that secret's ARN in `terraform.tfvars`, then
+`terraform apply`. That run only adds one IAM statement to the execution role
+and updates the task definition -- nothing destructive.
+
+**The apply alone does not turn tracing on.** The service ignores
+`task_definition` changes (the deploy workflow owns which image runs), so the
+apply registers a new revision and leaves the running task on the old one. The
+next deploy run activates it: the workflow reads the family's *latest* revision,
+which is the one Terraform just wrote, swaps in a freshly built image, and
+deploys that. Do not shortcut it with `aws ecs update-service --task-definition`
+pointed at Terraform's revision -- that revision carries the `:bootstrap` image
+and would roll production back to the first build ever pushed.
+
+Unlike the database password, the LangSmith key is not fetched by application
+code: ECS resolves it into `LANGSMITH_API_KEY` before the container starts,
+using the execution role (see the `secrets` field in `ecs.tf`), because it is
+a plain string with no parsing to do. The project name is `biogent-rag`,
+matching local dev's default of `biogent-rag-dev` minus the `-dev` suffix --
+see `services/rag/.env.example`.
+
 ## Cost
 
 Roughly **$50-60/month** on top of RDS: ALB ~$17, Fargate (1 vCPU / 4 GB,
