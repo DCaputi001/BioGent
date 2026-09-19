@@ -67,6 +67,22 @@ variable "langsmith_secret_arn" {
   default     = ""
 }
 
+# --- Authentication (Phase 8) ---
+
+variable "cognito_local_dev_urls" {
+  description = <<-EOT
+    Extra sign-in redirect targets for local development, on top of the
+    CloudFront URL, which is added automatically. Vite's dev server by default.
+
+    Set this to [] for a deployment that should not accept a localhost
+    redirect. It is not a security hole on its own -- an attacker cannot make
+    someone else's browser hand them a code issued to localhost -- but it is
+    also not needed in an environment nobody develops against.
+  EOT
+  type        = list(string)
+  default     = ["http://localhost:5173"]
+}
+
 # --- Service sizing ---
 
 variable "task_cpu" {

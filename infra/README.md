@@ -145,6 +145,40 @@ a plain string with no parsing to do. The project name is `biogent-rag`,
 matching local dev's default of `biogent-rag-dev` minus the `-dev` suffix --
 see `services/rag/.env.example`.
 
+## Cognito sign-in (Phase 8)
+
+`cognito.tf` creates the user pool, a public SPA client and the hosted sign-in
+page. Callback and logout URLs are derived from the CloudFront domain
+automatically, plus `http://localhost:5173` for local development
+(`cognito_local_dev_urls`), so there is nothing to fill in by hand.
+
+After `terraform apply`, three outputs feed the frontend build. Set them as
+GitHub **repository variables**, the same way as `FRONTEND_BUCKET` — none is a
+secret, and a public SPA client has no client secret at all:
+
+| Variable | Value from |
+|---|---|
+| `COGNITO_AUTHORITY` | `terraform output cognito_authority` |
+| `COGNITO_CLIENT_ID` | `terraform output cognito_client_id` |
+| `COGNITO_HOSTED_UI_DOMAIN` | `terraform output cognito_hosted_ui_domain` |
+
+The API gets its two (`RAG_COGNITO_USER_POOL_ID`, `RAG_COGNITO_CLIENT_ID`)
+directly from Terraform through the task definition, so they need no manual
+step. As with LangSmith, **the apply alone does not put them on the running
+task** — the next deploy does.
+
+Create accounts from the hosted sign-up page, or from the CLI:
+
+```powershell
+aws cognito-idp admin-create-user --user-pool-id (terraform output -raw cognito_user_pool_id) `
+  --username researcher@example.org --profile biogent-admin
+```
+
+**`deletion_protection` is ACTIVE on the pool, deliberately.** Every ingested
+chunk is stamped with a `sub` issued by this pool; a replacement pool issues
+different ones, so destroying it would leave every document owned by an
+identity nobody can sign in as. Disable it consciously or not at all.
+
 ## Cost
 
 Roughly **$50-60/month** on top of RDS: ALB ~$17, Fargate (1 vCPU / 4 GB,

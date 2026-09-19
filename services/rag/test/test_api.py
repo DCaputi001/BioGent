@@ -5,6 +5,12 @@ query.get_retriever are replaced, so these stay in the fast CI tier alongside
 the other tests. Whether the chain produces a good answer is the eval
 harness's job; this file checks status codes, the error shape, and that the
 caller's key is what reaches the chain and never comes back out.
+
+Sign-in is stubbed with a FastAPI dependency override rather than a real
+token: whether a Cognito token is genuine is test_auth.py's subject, and
+minting signed tokens here would test that twice while making every unrelated
+case slower. One case below deliberately skips the override, to confirm the
+endpoint is closed by default rather than open when nothing stubs it.
 """
 
 import httpx
@@ -14,8 +20,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
 from app import api, query
+from app.auth import require_user
 
 API_KEY = "sk-ant-test-key"
+USER_ID = "cognito-sub-of-the-signed-in-researcher"
 QUESTION = "What role does PIEZO play in mechanosensation?"
 SOURCE = "PIEZO_provides_an_ancient_molecular_framework_for_.pdf"
 
@@ -32,8 +40,17 @@ def recorded_calls(monkeypatch) -> list[dict]:
     """Stub the chain with a successful answer and record what it was passed."""
     calls: list[dict] = []
 
-    def fake_ask_with_context(question, anthropic_api_key=None, retriever=None):
-        calls.append({"question": question, "anthropic_api_key": anthropic_api_key})
+    def fake_ask_with_context(question, retriever, anthropic_api_key=None):
+        calls.append(
+            {
+                "question": question,
+                "anthropic_api_key": anthropic_api_key,
+                # Carries the identity: get_retriever is stubbed below to encode
+                # whichever user it was asked for, which is how these tests see
+                # that retrieval was scoped to the signed-in researcher.
+                "retriever": retriever,
+            }
+        )
         return {
             "answer": "PIEZO channels transduce mechanical force.",
             "context": "...retrieved chunks...",
@@ -43,8 +60,13 @@ def recorded_calls(monkeypatch) -> list[dict]:
     monkeypatch.setattr(query, "ask_with_context", fake_ask_with_context)
     # Guards against a real embedding model load if the cached retriever is
     # ever built eagerly rather than inside the request.
-    monkeypatch.setattr(query, "get_retriever", lambda: "fake-retriever")
+    monkeypatch.setattr(query, "get_retriever", _fake_get_retriever)
     return calls
+
+
+def _fake_get_retriever(user_id: str) -> str:
+    """Stands in for the real retriever, naming the user it was scoped to."""
+    return f"retriever-for:{user_id}"
 
 
 @pytest.fixture
@@ -52,17 +74,28 @@ def failing_chain(monkeypatch):
     """Make the chain raise a given exception, as the real one would upstream."""
 
     def _fail_with(exc: Exception):
-        def fake_ask_with_context(question, anthropic_api_key=None, retriever=None):
+        def fake_ask_with_context(question, retriever, anthropic_api_key=None):
             raise exc
 
         monkeypatch.setattr(query, "ask_with_context", fake_ask_with_context)
-        monkeypatch.setattr(query, "get_retriever", lambda: "fake-retriever")
+        monkeypatch.setattr(query, "get_retriever", _fake_get_retriever)
 
     return _fail_with
 
 
 @pytest.fixture
 def client() -> TestClient:
+    """A client standing in for a signed-in researcher."""
+    api.app.dependency_overrides[require_user] = lambda: USER_ID
+    yield TestClient(api.app)
+    # Overrides live on the app object, which is shared across tests, so
+    # leaving one in place would silently sign in every later test too.
+    api.app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def signed_out_client() -> TestClient:
+    """A client with no session at all, and nothing stubbing one in."""
     return TestClient(api.app)
 
 
@@ -96,8 +129,14 @@ def test_answers_question_on_callers_key(client, recorded_calls):
         "sources": [SOURCE],
     }
     # The key the caller sent is the key the chain ran on — the whole point of
-    # the BYO-key flow.
-    assert recorded_calls == [{"question": QUESTION, "anthropic_api_key": API_KEY}]
+    # the BYO-key flow — and retrieval was scoped to the signed-in researcher.
+    assert recorded_calls == [
+        {
+            "question": QUESTION,
+            "anthropic_api_key": API_KEY,
+            "retriever": f"retriever-for:{USER_ID}",
+        }
+    ]
 
 
 def test_missing_key_header_is_rejected(client, recorded_calls):
@@ -127,6 +166,48 @@ def test_never_falls_back_to_server_environment_key(client, recorded_calls, monk
 
     assert response.status_code == 401
     assert recorded_calls == []
+
+
+def test_signed_out_request_is_rejected(signed_out_client, recorded_calls):
+    """No session means no answer, even with a perfectly good Anthropic key.
+
+    Nothing overrides the auth dependency here, so this also confirms the
+    endpoint is closed by default: if require_user were ever dropped from the
+    route, this is the test that notices.
+    """
+    response = _ask(signed_out_client)
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "missing_auth"
+    assert recorded_calls == []
+
+
+def test_a_malformed_authorization_header_is_rejected(signed_out_client, recorded_calls):
+    response = signed_out_client.post(
+        f"{api.API_PREFIX}/ask",
+        json={"question": QUESTION},
+        headers={api.API_KEY_HEADER: API_KEY, "Authorization": "Basic not-a-bearer-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_token"
+    assert recorded_calls == []
+
+
+def test_the_request_body_cannot_choose_whose_documents_to_search(client, recorded_calls):
+    """Identity comes from the verified token, never from the request.
+
+    A body field naming another user must not reach retrieval — that would be
+    the whole isolation boundary undone by one unvalidated parameter.
+    """
+    response = client.post(
+        f"{api.API_PREFIX}/ask",
+        json={"question": QUESTION, "user_id": "someone-elses-cognito-sub"},
+        headers={api.API_KEY_HEADER: API_KEY},
+    )
+
+    assert response.status_code == 200
+    assert recorded_calls[0]["retriever"] == f"retriever-for:{USER_ID}"
 
 
 @pytest.mark.parametrize("question", ["", "   "])

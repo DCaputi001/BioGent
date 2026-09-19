@@ -67,6 +67,49 @@ def missing_api_key() -> ApiError:
     )
 
 
+def missing_auth() -> ApiError:
+    """No bearer token at all: the caller is signed out, not broken.
+
+    Deliberately a different code from missing_api_key. Both are 401, but the
+    remedies are opposites -- one needs a sign-in, the other needs an Anthropic
+    key -- and a UI branching on status alone could only guess between them.
+    """
+    return ApiError(
+        401,
+        "missing_auth",
+        "Sign in to ask questions about your documents.",
+    )
+
+
+def invalid_token() -> ApiError:
+    """A token that is present but expired, malformed, or not ours.
+
+    The distinction between those cases is deliberately not exposed: it tells a
+    caller probing the endpoint how close a forged token got, and the remedy is
+    the same either way. The specific reason goes to the server log.
+    """
+    return ApiError(
+        401,
+        "invalid_token",
+        "Your session has expired. Sign in again to continue.",
+    )
+
+
+def auth_unavailable() -> ApiError:
+    """Cognito's signing keys could not be fetched, so no token can be checked.
+
+    Retryable and deliberately not a 401: telling a correctly signed-in
+    researcher to sign in again cannot fix an outage on our side, and would
+    throw away a session that is still valid.
+    """
+    return ApiError(
+        503,
+        "auth_unavailable",
+        "Could not verify your sign-in just now. Try again in a moment.",
+        retryable=True,
+    )
+
+
 def _is_out_of_credit(exc: BadRequestError) -> bool:
     """Anthropic reports exhausted credit as a 400, not a payment-specific status.
 

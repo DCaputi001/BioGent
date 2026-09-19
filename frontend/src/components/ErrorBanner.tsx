@@ -15,9 +15,16 @@ interface ErrorBannerProps {
   onRetry: () => void
   onUpdateKey: () => void
   onOpenHelp: () => void
+  onSignIn: () => void
 }
 
-export function ErrorBanner({ error, onRetry, onUpdateKey, onOpenHelp }: ErrorBannerProps) {
+export function ErrorBanner({
+  error,
+  onRetry,
+  onUpdateKey,
+  onOpenHelp,
+  onSignIn,
+}: ErrorBannerProps) {
   if (!error) return null
 
   const remedy = remedyFor(error)
@@ -44,6 +51,12 @@ export function ErrorBanner({ error, onRetry, onUpdateKey, onOpenHelp }: ErrorBa
           <a href={ANTHROPIC_BILLING_URL} target="_blank" rel="noreferrer noopener">
             Add credit in the Anthropic Console
           </a>
+        )}
+
+        {remedy === 'sign-in' && (
+          <button type="button" onClick={onSignIn}>
+            Sign in again
+          </button>
         )}
 
         {remedy === 'retry' && (

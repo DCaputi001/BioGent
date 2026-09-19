@@ -28,6 +28,11 @@ dependencies = [
     # calls. See PRODUCTION_PLAN.md Phase 4.
     "fastapi",
     "uvicorn[standard]",
+    # Verifying Amazon Cognito access tokens (app/auth.py) — Cognito is the auth
+    # mechanism ARCHITECTURE.md settled on, and its tokens are RS256 JWTs checked
+    # against a published JWKS endpoint. The [crypto] extra is what supplies RS256;
+    # without it PyJWT can only handle symmetric algorithms and every token fails.
+    "pyjwt[crypto]",
     # Listed explicitly, though docling and sentence-transformers would pull
     # them in anyway: a transitive dependency cannot be pointed at the CPU-only
     # index below, and a direct one can. torchvision has to be pinned to the

@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import config
-from app.query import ask_with_context
+from app.query import ask_with_context, build_retriever
 from evals.cases import CASES, EvalCase
 from evals.checks import (
     CheckResult,
@@ -58,6 +58,18 @@ def _use_eval_tracing_project() -> None:
         os.environ["LANGSMITH_PROJECT"] = f"{config.LANGSMITH_PROJECT}-evals"
 
 
+def build_eval_retriever():
+    """A retriever over the eval identity's seeded copy of the corpus.
+
+    Retrieval is filtered by owner, and an eval run never signs in, so without
+    an identity of its own the filter would match nothing and every case would
+    fail for a scoping reason rather than a quality one. The corpus is seeded
+    with `uv run python -m app.ingest --user-id <RAG_EVAL_USER_ID>`; see
+    KNOWN_ISSUES.md for why it is a fixed fixture rather than a real account.
+    """
+    return build_retriever(config.EVAL_USER_ID)
+
+
 def build_judge():
     """The judge model, built once per run.
 
@@ -69,15 +81,17 @@ def build_judge():
     return ChatAnthropic(model=config.EVAL_JUDGE_MODEL)
 
 
-def run_case(case: EvalCase, judge=None) -> dict:
+def run_case(case: EvalCase, judge=None, retriever=None) -> dict:
     """Run one case and score it. Never raises: a failure is a result.
 
-    Retrieval uses the default corpus. See KNOWN_ISSUES.md — Phase 8's
-    per-user filtering will hide these documents from an eval run, and the
-    fix depends on how that isolation is implemented.
+    Retrieval is scoped to the eval identity (config.EVAL_USER_ID), which owns
+    a seeded copy of the corpus these cases assert against. Passing the
+    retriever in means the embedding model loads once per run rather than once
+    per case.
     """
+    retriever = retriever if retriever is not None else build_eval_retriever()
     try:
-        result = ask_with_context(case.question)
+        result = ask_with_context(case.question, retriever=retriever)
     except Exception as exc:  # noqa: BLE001 - see below
         # Deliberately broad: an eval run is a measurement, and one unreachable
         # database or rate-limited call should be recorded as a failed case
@@ -184,7 +198,10 @@ def main() -> int:
         selected = [c for c in selected if not c.uses_judge]
 
     judge = build_judge() if any(c.uses_judge for c in selected) else None
-    results = [run_case(case, judge) for case in selected]
+    # Built once and reused: build_retriever() loads the embedding model, which
+    # would otherwise be paid for on every case.
+    retriever = build_eval_retriever()
+    results = [run_case(case, judge, retriever) for case in selected]
     metrics = summarize(results)
 
     print("\n--- Eval Results ---")
@@ -214,6 +231,9 @@ def main() -> int:
                 "embedding_model": config.EMBEDDING_MODEL,
                 "retriever_k": config.RETRIEVER_K,
                 "collection": config.COLLECTION_NAME,
+                # Which corpus these scores came from. Two runs against
+                # different eval identities are not comparable.
+                "eval_user_id": config.EVAL_USER_ID,
                 "metrics": metrics,
                 "results": results,
             },

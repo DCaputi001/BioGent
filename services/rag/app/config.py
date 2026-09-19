@@ -90,6 +90,15 @@ DATABASE_URL = os.getenv(
 # (e.g. the data analyst agent, if it ever needs embeddings of its own).
 COLLECTION_NAME = os.getenv("RAG_COLLECTION_NAME", "biogent_rag_documents")
 
+# The chunk-metadata key holding the owning researcher's Cognito sub. Phase 8
+# isolates users by filtering on this key rather than by giving each one their
+# own collection (ARCHITECTURE.md -- "Per-user data and persistence"). Lives
+# here so ingest.py (which writes it) and query.py (which filters on it) share
+# one definition; a rename touching only one side would return nothing rather
+# than fail. Deliberately NOT environment-overridable: changing it would orphan
+# every chunk already written under the old key.
+OWNER_METADATA_KEY = "user_id"
+
 # --- Embeddings ---
 # Settled on BAAI/bge-small-en-v1.5 after the small project's retrieval
 # debugging session — see the small project's README Troubleshooting Log.
@@ -122,6 +131,15 @@ ANTHROPIC_MODEL = os.getenv("RAG_ANTHROPIC_MODEL", "claude-sonnet-5")
 # longer comparable with the reports committed before it.
 EVAL_JUDGE_MODEL = os.getenv("RAG_EVAL_JUDGE_MODEL", ANTHROPIC_MODEL)
 
+# The identity that owns the eval corpus. Phase 8 filters every retrieval by
+# user_id, but an eval run never authenticates, so without an identity of its
+# own the filter would match nothing and every case would fail for a scoping
+# reason rather than a quality one (KNOWN_ISSUES.md called this out before the
+# filtering landed). Deliberately a fixed sentinel string, not a real Cognito
+# sub: the eval corpus is seeded by `app.ingest --user-id`, belongs to no human
+# account, and must stay reproducible from a fresh clone.
+EVAL_USER_ID = os.getenv("RAG_EVAL_USER_ID", "eval-fixture")
+
 # --- LangSmith tracing (Phase 6) ---
 # Not read by this app's own code -- LangChain's SDK picks these three up
 # directly from os.environ at invoke time, so setting them is enough to trace
@@ -152,6 +170,18 @@ def _warn_if_tracing_misconfigured(tracing: bool, has_key: bool) -> None:
 
 
 _warn_if_tracing_misconfigured(LANGSMITH_TRACING, bool(os.getenv("LANGSMITH_API_KEY")))
+
+# --- Authentication: Amazon Cognito (Phase 8) ---
+# Identifies WHO is asking, which is a separate question from the Anthropic key,
+# which only decides who PAYS. Both are required on a query: the token scopes
+# retrieval to the caller's own documents, the key bills that caller's Anthropic
+# account. Neither is a secret to this service -- the pool and client ids are
+# public identifiers, and the client is a public SPA client with no secret at
+# all, so these are plain environment variables rather than Secrets Manager
+# entries. Unset locally means the API refuses to start an authenticated route;
+# see app/auth.py.
+COGNITO_USER_POOL_ID = os.getenv("RAG_COGNITO_USER_POOL_ID")
+COGNITO_CLIENT_ID = os.getenv("RAG_COGNITO_CLIENT_ID")
 
 # --- HTTP API ---
 # Origins the browser may call the API from. Defaults to Vite's dev server.

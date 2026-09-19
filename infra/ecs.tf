@@ -48,6 +48,11 @@ locals {
       { name = "RAG_DB_NAME", value = var.db_name },
       { name = "RAG_S3_BUCKET", value = var.documents_bucket },
       { name = "AWS_REGION", value = var.aws_region },
+      # Identifiers, not credentials: the API uses them to check that a token
+      # was issued by this pool for this app client. The SPA client has no
+      # secret at all, so neither value belongs in Secrets Manager.
+      { name = "RAG_COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.main.id },
+      { name = "RAG_COGNITO_CLIENT_ID", value = aws_cognito_user_pool_client.web.id },
     ],
     var.langsmith_secret_arn != "" ? [
       { name = "LANGSMITH_TRACING", value = "true" },
