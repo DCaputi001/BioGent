@@ -110,6 +110,42 @@ def auth_unavailable() -> ApiError:
     )
 
 
+def document_not_found() -> ApiError:
+    """Deliberately the same answer for "does not exist" and "is not yours".
+
+    Distinguishing them would turn this endpoint into a way to test whether a
+    given document id exists in someone else's library.
+    """
+    return ApiError(
+        404,
+        "document_not_found",
+        "That document is not in your library. It may have been deleted.",
+    )
+
+
+def unsupported_file_type(suffix: str, supported: tuple[str, ...]) -> ApiError:
+    return ApiError(
+        415,
+        "unsupported_file_type",
+        f"{suffix or 'That file type'} cannot be read. "
+        f"Upload one of: {', '.join(supported)}.",
+    )
+
+
+def upload_not_configured() -> ApiError:
+    """Uploads are on, but nothing is set up to process them.
+
+    A 503 rather than a 500: it is an operator configuration gap, and a
+    researcher retrying later may well find it fixed.
+    """
+    return ApiError(
+        503,
+        "upload_unavailable",
+        "Uploading is temporarily unavailable. Try again shortly.",
+        retryable=True,
+    )
+
+
 def _is_out_of_credit(exc: BadRequestError) -> bool:
     """Anthropic reports exhausted credit as a 400, not a payment-specific status.
 

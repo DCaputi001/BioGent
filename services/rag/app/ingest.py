@@ -79,15 +79,38 @@ def _build_chunker(embedding_model: str = config.EMBEDDING_MODEL) -> HybridChunk
     return HybridChunker(tokenizer=hf_tokenizer)
 
 
-def _chunk_metadata(source_name: str, user_id: str) -> dict:
+def _chunk_metadata(source_name: str, user_id: str, document_id: str | None = None) -> dict:
     """The metadata written onto every chunk, whatever produced it.
 
     One definition for both loaders so the two cannot drift. The owner key is
     the one query.owner_filter() matches on, and both sides take its name from
     config.OWNER_METADATA_KEY — a chunk written without it is retrievable by
     nobody, which is silent rather than loud.
+
+    document_id is absent for the operator's bulk --from-s3 ingest, which has
+    no documents row behind it; uploaded documents always carry one.
     """
-    return {"source": source_name, config.OWNER_METADATA_KEY: user_id}
+    metadata = {"source": source_name, config.OWNER_METADATA_KEY: user_id}
+    if document_id is not None:
+        metadata[config.DOCUMENT_METADATA_KEY] = str(document_id)
+    return metadata
+
+
+def chunk_ids(document_id, count: int, start: int = 0) -> list[str]:
+    """Deterministic ids for one document's chunks: "{document_id}:{index}".
+
+    This is what makes re-ingesting a corrected file safe. PGVector writes with
+    ON CONFLICT (id) DO UPDATE, so the same id overwrites in place -- the
+    duplicate-chunk bug in KNOWN_ISSUES.md stops being possible rather than
+    being something a delete-then-insert has to get right. It also means a
+    crash midway through leaves the document half-updated rather than
+    half-duplicated, and the next run corrects it.
+
+    Deleting works from the same rule: PGVector.delete() accepts only ids, not
+    a metadata filter, so knowing a document's id and chunk count is exactly
+    enough to remove it without touching langchain-postgres's tables directly.
+    """
+    return [f"{document_id}:{index}" for index in range(start, count)]
 
 
 def load_and_chunk_pdfs(
@@ -123,6 +146,44 @@ def load_and_chunk_pdfs(
             )
 
     return documents
+
+
+def chunk_one_file(
+    path: Path,
+    user_id: str,
+    document_id,
+    do_ocr: bool = config.DO_OCR,
+    embedding_model: str = config.EMBEDDING_MODEL,
+) -> list[LCDocument]:
+    """Parse and chunk a single uploaded file.
+
+    The bulk loaders above glob a directory, which is right for the operator's
+    --from-s3 run and wrong for an upload: the worker handles one file that it
+    already knows the identity of, and globbing a temp directory to find it
+    again would lose the document_id linking chunks back to their row.
+
+    do_ocr is decided per document rather than read from the global setting,
+    which is the gap KNOWN_ISSUES.md describes -- OCR costs roughly 90 seconds
+    and finds nothing on a born-digital paper, so it has to be enabled only for
+    the files that need it.
+    """
+    suffix = path.suffix.lower()
+
+    if suffix == ".pdf":
+        chunker = _build_chunker(embedding_model)
+        docling_doc = _get_converter(do_ocr).convert(str(path)).document
+        texts = [chunker.contextualize(chunk) for chunk in chunker.chunk(docling_doc)]
+    else:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP
+        )
+        texts = splitter.split_text(path.read_text(encoding="utf-8"))
+
+    metadata = _chunk_metadata(path.name, user_id, document_id)
+    # A fresh dict per chunk: LangChain hands the same object through to the
+    # vector store, so sharing one would make every chunk alias the same
+    # metadata and any later per-chunk edit would apply to all of them.
+    return [LCDocument(page_content=text, metadata=dict(metadata)) for text in texts]
 
 
 def load_and_chunk_plaintext(
@@ -214,6 +275,61 @@ def build_vector_store(
         pre_delete_collection=reset,
     )
     return db
+
+
+def open_vector_store(
+    database_url: str | None = None,
+    collection_name: str = config.COLLECTION_NAME,
+    embedding_model: str = config.EMBEDDING_MODEL,
+) -> PGVector:
+    """An existing collection, without writing anything to it."""
+    return PGVector(
+        embeddings=HuggingFaceEmbeddings(model_name=embedding_model),
+        connection=database_url or db_credentials.get_database_url(),
+        collection_name=collection_name,
+        use_jsonb=True,
+    )
+
+
+def replace_document_chunks(
+    chunks: list[LCDocument],
+    document_id,
+    previous_chunk_count: int | None = None,
+    store: PGVector | None = None,
+) -> int:
+    """Write one document's chunks, superseding whatever it had before.
+
+    Returns the new chunk count.
+
+    Writes under deterministic ids, so PGVector's ON CONFLICT (id) DO UPDATE
+    overwrites the previous version of each chunk in place. The only leftovers
+    are the tail: if the corrected file produces fewer chunks than the original
+    did, the surplus ids from the old run would otherwise linger and keep being
+    retrieved as part of a document that no longer contains them.
+    """
+    store = store or open_vector_store()
+
+    new_count = len(chunks)
+    if new_count:
+        store.add_documents(chunks, ids=chunk_ids(document_id, new_count))
+
+    if previous_chunk_count and previous_chunk_count > new_count:
+        store.delete(ids=chunk_ids(document_id, previous_chunk_count, start=new_count))
+
+    return new_count
+
+
+def delete_document_chunks(document_id, chunk_count: int | None, store: PGVector | None = None):
+    """Remove every chunk belonging to one document.
+
+    A null chunk_count means the document never finished ingesting, so there is
+    nothing to remove -- not that its chunks are unknown.
+    """
+    if not chunk_count:
+        return
+
+    store = store or open_vector_store()
+    store.delete(ids=chunk_ids(document_id, chunk_count))
 
 
 def run_ingestion(

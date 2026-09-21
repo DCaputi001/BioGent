@@ -100,12 +100,19 @@ data "aws_iam_policy_document" "github_actions" {
   }
 
   # Registering a task definition means handing these roles to ECS. Restricting
-  # PassRole to exactly these two is what stops the CI role from attaching a
-  # more privileged role to a task it controls.
+  # PassRole to exactly these is what stops the CI role from attaching a more
+  # privileged role to a task it controls -- which is also why the list has to
+  # grow whenever a service does. A new task role missing from here fails the
+  # deploy at RegisterTaskDefinition with an AccessDenied that names PassRole
+  # rather than the role it is actually missing.
   statement {
-    sid       = "PassTaskRoles"
-    actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.execution.arn, aws_iam_role.task.arn]
+    sid     = "PassTaskRoles"
+    actions = ["iam:PassRole"]
+    resources = [
+      aws_iam_role.execution.arn,
+      aws_iam_role.task.arn,
+      aws_iam_role.worker_task.arn,
+    ]
 
     condition {
       test     = "StringEquals"

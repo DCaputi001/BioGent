@@ -41,18 +41,28 @@ resource "aws_ecs_cluster" "main" {
 # on langsmith_secret_arn being set -- jsonencode() has no "if" of its own, so
 # the conditional has to happen in the list before encoding.
 locals {
+  # Shared by both services: the worker talks to the same database, the same
+  # bucket and the same queue. Split out so the two cannot drift -- a worker
+  # pointed at a different queue than the API writes to would simply never see
+  # any work, with nothing reporting an error.
+  shared_container_environment = [
+    { name = "RAG_DB_SECRET_ID", value = var.db_secret_arn },
+    { name = "RAG_DB_HOST", value = var.db_host },
+    { name = "RAG_DB_NAME", value = var.db_name },
+    { name = "RAG_S3_BUCKET", value = var.documents_bucket },
+    { name = "AWS_REGION", value = var.aws_region },
+    { name = "RAG_INGESTION_QUEUE_URL", value = aws_sqs_queue.ingestion.id },
+  ]
+
   rag_container_environment = concat(
+    local.shared_container_environment,
     [
-      { name = "RAG_DB_SECRET_ID", value = var.db_secret_arn },
-      { name = "RAG_DB_HOST", value = var.db_host },
-      { name = "RAG_DB_NAME", value = var.db_name },
-      { name = "RAG_S3_BUCKET", value = var.documents_bucket },
-      { name = "AWS_REGION", value = var.aws_region },
       # Identifiers, not credentials: the API uses them to check that a token
       # was issued by this pool for this app client. The SPA client has no
       # secret at all, so neither value belongs in Secrets Manager.
       { name = "RAG_COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.main.id },
       { name = "RAG_COGNITO_CLIENT_ID", value = aws_cognito_user_pool_client.web.id },
+      { name = "RAG_MAX_UPLOAD_BYTES", value = tostring(var.max_upload_bytes) },
     ],
     var.langsmith_secret_arn != "" ? [
       { name = "LANGSMITH_TRACING", value = "true" },
@@ -60,6 +70,17 @@ locals {
       # "biogent-rag-dev" minus the "-dev" suffix, so production and local
       # tracing share one base project name in the LangSmith dashboard rather
       # than reading as two unrelated apps.
+      { name = "LANGSMITH_PROJECT", value = "${var.project}-rag" },
+    ] : []
+  )
+
+  # The worker traces too: its chain calls are the ingestion half of the same
+  # pipeline, and a LangSmith project missing them would show retrieval quality
+  # with no view of what was indexed.
+  worker_container_environment = concat(
+    local.shared_container_environment,
+    var.langsmith_secret_arn != "" ? [
+      { name = "LANGSMITH_TRACING", value = "true" },
       { name = "LANGSMITH_PROJECT", value = "${var.project}-rag" },
     ] : []
   )

@@ -16,11 +16,23 @@ import type { AskResponse } from './api/types'
 import { hostedSignOutUrl, isAuthConfigured } from './auth/oidcConfig'
 import { AnswerPanel } from './components/AnswerPanel'
 import { ApiKeyPanel } from './components/ApiKeyPanel'
+import { DocumentList } from './components/DocumentList'
+import { DocumentUpload } from './components/DocumentUpload'
 import { ErrorBanner } from './components/ErrorBanner'
 import { HelpPage } from './components/HelpPage'
 import { QuestionForm } from './components/QuestionForm'
 import { SignInPanel } from './components/SignInPanel'
 import { useApiKey } from './hooks/useApiKey'
+import { useDocuments } from './hooks/useDocuments'
+
+/**
+ * Upload limit shown before the API has had a chance to state its own.
+ *
+ * Only ever used for the hint text and the client-side pre-check; S3's
+ * presigned policy is what actually enforces a limit, and it uses the server's
+ * value whatever this says.
+ */
+const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 const UNEXPECTED_ERROR = new ApiError(
   'unexpected_error',
@@ -39,6 +51,7 @@ const SIGNED_OUT_ERROR = new ApiError(
 function App() {
   const auth = useAuth()
   const keyState = useApiKey()
+  const library = useDocuments(auth.user?.access_token)
   const [showHelp, setShowHelp] = useState(false)
   const [pending, setPending] = useState(false)
   const [answer, setAnswer] = useState<AskResponse | null>(null)
@@ -147,6 +160,27 @@ function App() {
       </header>
 
       <ApiKeyPanel keyState={keyState} onOpenHelp={() => setShowHelp(true)} />
+
+      <DocumentUpload
+        onUpload={(file) => void library.upload(file)}
+        uploading={library.uploading}
+        maxBytes={DEFAULT_MAX_UPLOAD_BYTES}
+      />
+      {/* Its own banner rather than the shared one below: a failed upload and
+          a failed question are unrelated, and routing both through one slot
+          would let either wipe the other's message off the screen. */}
+      <ErrorBanner
+        error={library.error}
+        onRetry={() => void library.refresh()}
+        onUpdateKey={handleUpdateKey}
+        onOpenHelp={() => setShowHelp(true)}
+        onSignIn={() => void auth.signinRedirect()}
+      />
+      <DocumentList
+        documents={library.documents}
+        onRemove={(documentId) => void library.remove(documentId)}
+      />
+
       <QuestionForm disabled={!keyState.hasKey} pending={pending} onSubmit={runQuestion} />
       <ErrorBanner
         error={error}

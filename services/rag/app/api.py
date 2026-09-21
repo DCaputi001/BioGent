@@ -22,16 +22,26 @@ Run locally:
 """
 
 import logging
+import uuid
+from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import config, query
+from app import config, db, documents, ingest, query, queue, storage
 from app.auth import require_user
-from app.errors import ApiError, ErrorResponse, missing_api_key, to_api_error
+from app.errors import (
+    ApiError,
+    ErrorResponse,
+    document_not_found,
+    missing_api_key,
+    to_api_error,
+    unsupported_file_type,
+    upload_not_configured,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +67,9 @@ router = APIRouter(prefix=API_PREFIX)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
-    allow_methods=["GET", "POST"],
+    # DELETE is here for removing a document. Production is same-origin through
+    # CloudFront, so this only ever matters to the Vite dev server.
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "Authorization", API_KEY_HEADER],
 )
 
@@ -76,6 +88,40 @@ class AskResponse(BaseModel):
         default_factory=list,
         description="Filenames of the documents the answer was grounded in.",
     )
+
+
+class UploadRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    filename: str = Field(min_length=1, description="The file the researcher chose.")
+
+
+class UploadResponse(BaseModel):
+    """Everything the browser needs to post the file straight to S3."""
+
+    document_id: uuid.UUID
+    filename: str = Field(description="The sanitized name the document is stored under.")
+    upload_url: str
+    fields: dict[str, str] = Field(description="Form fields that must accompany the file.")
+    max_bytes: int
+
+
+class DocumentResponse(BaseModel):
+    id: uuid.UUID
+    filename: str
+    status: str
+    chunk_count: int | None = None
+    error_message: str | None = None
+
+    @classmethod
+    def of(cls, document) -> "DocumentResponse":
+        return cls(
+            id=document.id,
+            filename=document.filename,
+            status=document.status,
+            chunk_count=document.chunk_count,
+            error_message=document.error_message,
+        )
 
 
 @app.exception_handler(ApiError)
@@ -163,6 +209,133 @@ def ask(
         raise error from exc
 
     return AskResponse(answer=result["answer"], sources=result["sources"])
+
+
+def _load_owned_document(session, user_id: str, document_id: uuid.UUID):
+    """Fetch a document or raise 404, never revealing another owner's rows."""
+    document = documents.get(session, user_id, document_id)
+    if document is None:
+        raise document_not_found()
+    return document
+
+
+@router.post("/documents", response_model=UploadResponse)
+def create_upload(request: UploadRequest, user_id: str = Depends(require_user)) -> UploadResponse:
+    """Reserve a document and hand back a presigned POST for the file itself.
+
+    The bytes never pass through this service: the browser posts them straight
+    to S3. That is not only cheaper, it is required -- CloudFront caps a
+    request body at 1MB, well under any real paper.
+
+    The S3 key is built here from the verified user id, so a caller cannot
+    steer the upload at another researcher's prefix, and the presigned policy
+    pins both the key and a maximum size.
+    """
+    if not config.INGESTION_QUEUE_URL:
+        # Refused up front rather than after the upload: accepting a file that
+        # nothing can process would leave it stuck at "pending" forever.
+        raise upload_not_configured()
+
+    try:
+        filename = storage.sanitize_filename(request.filename)
+    except ValueError as exc:
+        raise ApiError(422, "invalid_request", str(exc)) from exc
+
+    if not filename.lower().endswith(storage.SUPPORTED_SUFFIXES):
+        raise unsupported_file_type(PurePosixPath(filename).suffix, storage.SUPPORTED_SUFFIXES)
+
+    key = storage.build_user_key(user_id, filename)
+
+    try:
+        presigned = storage.presigned_upload_post(key)
+        with db.session_scope() as session:
+            document = documents.create_pending(session, user_id, filename, key)
+            document_id = document.id
+    except ApiError:
+        raise
+    except Exception as exc:
+        error = to_api_error(exc)
+        logger.exception("POST /documents failed: %s", error.code)
+        raise error from exc
+
+    return UploadResponse(
+        document_id=document_id,
+        filename=filename,
+        upload_url=presigned["url"],
+        fields=presigned["fields"],
+        max_bytes=config.MAX_UPLOAD_BYTES,
+    )
+
+
+@router.post("/documents/{document_id}/complete", response_model=DocumentResponse)
+def complete_upload(
+    document_id: uuid.UUID, user_id: str = Depends(require_user)
+) -> DocumentResponse:
+    """Told by the browser that the upload finished; queues the work.
+
+    Separate from the upload itself because the upload goes to S3, which has no
+    way to call back into this service. If the browser dies between the two,
+    the document stays "pending" and the object is orphaned -- visible to the
+    researcher rather than silently missing, and re-uploading the same filename
+    reuses the row.
+    """
+    try:
+        with db.session_scope() as session:
+            document = _load_owned_document(session, user_id, document_id)
+            response = DocumentResponse.of(documents.mark_processing(session, document))
+
+        # After the commit: a queued message pointing at a row that was rolled
+        # back would be picked up by a worker that cannot find it.
+        queue.enqueue(document_id)
+    except ApiError:
+        raise
+    except Exception as exc:
+        error = to_api_error(exc)
+        logger.exception("POST /documents/{id}/complete failed: %s", error.code)
+        raise error from exc
+
+    return response
+
+
+@router.get("/documents", response_model=list[DocumentResponse])
+def list_documents(user_id: str = Depends(require_user)) -> list[DocumentResponse]:
+    """This researcher's documents and where each one has got to.
+
+    Polled by the UI while anything is still processing, which is why it stays
+    a plain read with no side effects.
+    """
+    try:
+        with db.session_scope() as session:
+            return [DocumentResponse.of(d) for d in documents.list_for_user(session, user_id)]
+    except Exception as exc:
+        error = to_api_error(exc)
+        logger.exception("GET /documents failed: %s", error.code)
+        raise error from exc
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(document_id: uuid.UUID, user_id: str = Depends(require_user)) -> None:
+    """Remove a document: its chunks, its row, and its bytes.
+
+    Chunks first. If the row went first and chunk deletion then failed, the
+    chunks would be unreachable and unowned -- still retrievable by the
+    researcher's queries, with nothing left recording where they came from.
+    """
+    try:
+        with db.session_scope() as session:
+            document = _load_owned_document(session, user_id, document_id)
+            chunk_count, s3_key = document.chunk_count, document.s3_key
+
+            ingest.delete_document_chunks(document_id, chunk_count)
+            documents.delete(session, document)
+
+        storage.delete_document_object(s3_key)
+    except ApiError:
+        raise
+    except Exception as exc:
+        error = to_api_error(exc)
+        logger.exception("DELETE /documents/{id} failed: %s", error.code)
+        raise error from exc
 
 
 # Registered after the routes above are defined, which is what actually puts

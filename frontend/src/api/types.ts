@@ -11,6 +11,45 @@ export interface AskResponse {
   sources: string[]
 }
 
+/**
+ * Where a document has got to. Mirrors app/models.py's DOCUMENT_STATUSES.
+ *
+ * A union rather than `string`, so a status the backend can never send is a
+ * compile error here instead of a branch that silently never runs.
+ */
+export type DocumentStatus = 'pending' | 'processing' | 'ready' | 'failed'
+
+/** Statuses where the worker has not finished, so the UI keeps polling. */
+export const IN_PROGRESS_STATUSES: readonly DocumentStatus[] = ['pending', 'processing']
+
+/** One row of GET /api/documents. */
+export interface DocumentResponse {
+  id: string
+  filename: string
+  status: DocumentStatus
+  chunk_count: number | null
+  /** Set only when status is 'failed'; already written for a researcher. */
+  error_message: string | null
+}
+
+/**
+ * The form fields S3 requires alongside the file in a presigned POST.
+ *
+ * Opaque on purpose: they are a signed policy plus its signature, and the
+ * browser's only correct move is to pass every one of them through unchanged.
+ */
+export type PresignedPostFields = Record<string, string>
+
+/** Successful POST /api/documents response: permission to upload one file. */
+export interface UploadResponse {
+  document_id: string
+  /** The sanitized name the document is stored under, which may differ from the file's. */
+  filename: string
+  upload_url: string
+  fields: PresignedPostFields
+  max_bytes: number
+}
+
 /** Error body the API returns for every failure, whatever the status code. */
 export interface ApiErrorBody {
   error: {

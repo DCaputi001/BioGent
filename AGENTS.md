@@ -44,15 +44,20 @@ This is a **monorepo** — one repository for all services and the frontend, not
 cd services/rag
 uv sync
 docker compose up -d postgres
-uv run python -m app.ingest        # or: docker compose run --rm rag python -m app.ingest
-uv run python -m app.ingest --from-s3   # ingest from RAG_S3_BUCKET instead of data/
-uv run python -m app.query
+uv run alembic upgrade head        # apply schema migrations before anything else
+uv run python -m app.ingest --user-id <sub>          # --user-id is required: it owns the chunks
+uv run python -m app.ingest --user-id <sub> --from-s3  # ingest from RAG_S3_BUCKET instead of data/
+uv run python -m app.query --user-id <sub>          # searches only that researcher's documents
 uv run uvicorn app.api:app --reload --port 8000   # HTTP API — routes live under /api
 uv run pytest -q                    # unit tests — fast, no API key needed
 uv run python -m evals.run_evals   # evals — needs a real ANTHROPIC_API_KEY, costs real API calls
 ```
 
 `docker compose up -d` (no service name) builds and runs the full app + Postgres stack together. `docker compose build rag` rebuilds just the app image after a code change.
+
+`--user-id` is a Cognito `sub`, or `eval-fixture` for the seeded eval corpus. It has no default on purpose: a default would mean "every researcher's documents", so forgetting it would leak across accounts instead of failing.
+
+Schema migrations (Alembic) cover only this project's own tables. The `langchain_pg_*` tables are created and owned by langchain-postgres; `alembic/env.py` filters them out of autogenerate, and a migration that tries to manage them is a bug.
 
 ---
 

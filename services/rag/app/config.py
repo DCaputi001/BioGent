@@ -61,6 +61,31 @@ AWS_CREDENTIALS_HINT = (
 S3_BUCKET = os.getenv("RAG_S3_BUCKET")
 S3_PREFIX = os.getenv("RAG_S3_PREFIX", "")
 
+# --- Researcher uploads (Phase 8) ---
+# Uploads land under one prefix per researcher, per ARCHITECTURE.md
+# ("Per-user data and persistence"). Kept distinct from S3_PREFIX, which scopes
+# the operator's bulk --from-s3 ingest over the whole bucket.
+USER_UPLOAD_PREFIX = "users"
+
+# The browser uploads straight to S3, so nothing server-side can refuse an
+# oversized file after the fact. This is handed to S3 as a presigned-POST
+# condition, which is what actually enforces it.
+MAX_UPLOAD_BYTES = _env_int("RAG_MAX_UPLOAD_BYTES", 50 * 1024 * 1024)
+
+# How long a presigned upload stays valid. Long enough for a slow connection to
+# finish a large PDF, short enough that a leaked URL stops working.
+UPLOAD_URL_TTL_SECONDS = _env_int("RAG_UPLOAD_URL_TTL_SECONDS", 900)
+
+# --- Background ingestion (Phase 8) ---
+# Parsing and embedding take minutes, far longer than a browser request can
+# wait, so an upload hands off to this queue. Unset locally means the API
+# refuses to accept uploads rather than silently dropping them.
+INGESTION_QUEUE_URL = os.getenv("RAG_INGESTION_QUEUE_URL")
+
+# SQS long-poll duration. 20 is the maximum, and it is what keeps an idle
+# worker from billing for a spin loop.
+WORKER_POLL_SECONDS = _env_int("RAG_WORKER_POLL_SECONDS", 20)
+
 # --- Vector store: Postgres + pgvector ---
 # Replaces the small project's local Chroma directory (RAG_DB_DIR / chroma_db).
 # Always read the connection through app.db_credentials.get_database_url(),
@@ -98,6 +123,12 @@ COLLECTION_NAME = os.getenv("RAG_COLLECTION_NAME", "biogent_rag_documents")
 # than fail. Deliberately NOT environment-overridable: changing it would orphan
 # every chunk already written under the old key.
 OWNER_METADATA_KEY = "user_id"
+
+# The chunk-metadata key linking a chunk back to its `documents` row. Present
+# only on chunks from an uploaded document; the operator's bulk --from-s3
+# ingest has no documents row behind it. Same reasoning as above for living
+# here: ingest.py writes it and the worker reads it when replacing a document.
+DOCUMENT_METADATA_KEY = "document_id"
 
 # --- Embeddings ---
 # Settled on BAAI/bge-small-en-v1.5 after the small project's retrieval

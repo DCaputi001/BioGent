@@ -12,13 +12,15 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 **Where:** `services/rag/app/ingest.py` — `build_vector_store()` / `run_ingestion()`
 
-**What's incomplete:** Ingestion is additive by default (`reset=False`) so a researcher can add new documents without wiping their existing ones — this was a deliberate fix (see `CHANGELOG.md`). But nothing currently tracks "have I already ingested this exact document." Re-ingesting the *same* file twice (e.g. to pick up a corrected version) will duplicate that file's chunks in the vector store rather than replacing them.
+**Fixed for uploaded documents; still open for the operator CLI path.**
 
-**Why deferred:** Properly fixing this means tracking "which document is this" per user, so a re-ingested file can be matched to its prior chunks and those specifically removed/replaced. That's tied to per-user document management, which doesn't fully exist until real accounts/multi-tenancy land.
+**What's incomplete:** A document uploaded through the web app no longer duplicates. Its chunks are written under deterministic ids (`{document_id}:{index}`), and PGVector writes with `ON CONFLICT (id) DO UPDATE`, so re-uploading a corrected file overwrites its chunks in place — and `replace_document_chunks()` trims the tail when the new version produces fewer. The remaining gap is the bulk path: `python -m app.ingest` and `--from-s3` still glob a directory with no `documents` row behind each file, so no id is available to write under, and re-running one duplicates exactly as before.
 
-**Unblocked by:** Phase 8's **upload stage** in `PRODUCTION_PLAN.md`. Phase 8's first stage added the identity half — every chunk now carries a `user_id` — but not the `documents` table, because nothing writes to it meaningfully until researchers upload their own files. Once a row exists per uploaded file (keyed by `user_id` plus a content hash or filename), re-ingestion can look up "does this user already have this document" and replace just that document's chunks instead of duplicating or wiping everything.
+**Why deferred:** The operator path ingests whole directories that may not correspond to per-user documents at all, so giving it document identity means deciding what a "document" is for a bulk load nobody uploaded. That is a real design question, and the researcher-facing path — the one that actually gets re-run routinely — is fixed.
 
-**Workaround until then:** `reset=True` on `run_ingestion()` for a full clean rebuild when a duplicate is suspected — same manual "wipe and redo" habit as the small project's `chroma_db` deletion, just via a function argument instead of deleting a folder.
+**Unblocked by:** Nothing external. It needs a decision about whether bulk ingestion should create `documents` rows, which would also give those files per-document OCR and deletion.
+
+**Workaround until then:** `reset=True` on `run_ingestion()` for a full clean rebuild when a duplicate is suspected from a CLI run. Note this wipes the whole collection, including uploaded documents — re-seed the eval corpus afterwards.
 
 ---
 
@@ -26,13 +28,15 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 
 **Where:** `services/rag/app/config.py` (`DO_OCR`) / `app/ingest.py` (`_get_converter()`)
 
-**What's incomplete:** Docling runs OCR over every PDF page by default. Research papers are born-digital and already carry a text layer, so OCR detected nothing while costing roughly 90 seconds per ingestion run (35 consecutive "text detection result is empty" warnings on a two-PDF corpus). OCR is now opt-in via `RAG_DO_OCR`, defaulting to off. The gap: a scanned or image-only PDF now ingests as zero chunks silently, with nothing telling the researcher why their document produced no answers.
+**Fixed for uploaded documents; still open for the operator CLI path.**
 
-**Why deferred:** Doing this properly means detecting per document whether a text layer exists and enabling OCR only for the ones that need it, rather than a single global flag. That detection belongs at upload time, alongside the per-document tracking that doesn't exist yet.
+**What's incomplete:** The worker now decides per document. It parses without OCR first, and if the result is almost empty (`worker.needs_ocr`, under 200 characters across all chunks) it re-parses with OCR on and records the decision in `documents.needs_ocr`. A file that still yields nothing is marked `failed` with a message naming the likely cause, so the silent-zero-chunks case is gone from the upload path. The bulk CLI path still reads the global `RAG_DO_OCR` flag, because it has no `documents` row to record a per-file decision in.
 
-**Unblocked by:** Phase 8's **upload stage** in `PRODUCTION_PLAN.md` — the same `documents` table that fixes re-ingestion duplicates is where a per-document "needs OCR" decision would live, set once at upload instead of guessed globally at ingest time. Phase 8's first stage did not add that table; see the entry above.
+**Why deferred:** Same reason as the entry above — bulk ingestion has no per-document identity to hang the decision on.
 
-**Workaround until then:** Set `RAG_DO_OCR=true` in `services/rag/.env` when ingesting scanned documents, and back to `false` afterward.
+**Unblocked by:** Nothing external; it follows whatever is decided about `documents` rows for bulk ingestion.
+
+**Workaround until then:** Set `RAG_DO_OCR=true` in `services/rag/.env` when bulk-ingesting scanned documents, and back to `false` afterward. Uploads need no flag.
 
 ---
 
@@ -61,6 +65,22 @@ Format: what the gap is, where it lives, why it's deferred, what unblocks fixing
 **Unblocked by:** Phase 4 in `PRODUCTION_PLAN.md`, the long-running HTTP API. At that point, catch the authentication failure, call `get_database_url.cache_clear()`, rebuild the engine, and retry. The alternative is AWS's Secrets Manager caching client with a TTL.
 
 **Workaround until then:** Restart any long-running `app.query` session after a rotation.
+
+---
+
+## Nothing tests the `documents` table against real SQL
+
+**Where:** `services/rag/test/test_api_documents.py`, `test_worker.py` — and the absence of a test for `app/documents.py`
+
+**What's incomplete:** The unit suite is deliberately database-free (`AGENTS.md` — fast, no credentials, runs on every push), and `app/models.py` uses `postgresql.UUID`, which will not run on SQLite. So the repository is exercised only through fakes: the tests prove the API calls it with the right owner and the worker updates the right statuses, but nothing executes the SQL. Specifically untested: that `UNIQUE (user_id, filename)` actually rejects a duplicate, that a re-upload reuses the existing row rather than raising `IntegrityError`, and that the CHECK constraint refuses an invalid status.
+
+These are the parts most likely to be wrong in a way the fakes cannot show, because a fake repository agrees with whatever the caller believes.
+
+**Why deferred:** Testing them means a real Postgres in CI — a service container, a migration step, and a slower pipeline — which is a tier of testing this project has not set up yet. `ARCHITECTURE.md` anticipates it ("tiered integration tests" under what to set up later).
+
+**Unblocked by:** Nothing external. A `postgres` service container in `.github/workflows/ci.yml` plus `alembic upgrade head` would cover it, at the cost of a slower `rag-service-tests` job.
+
+**Workaround until then:** The end-to-end verification in the PR covers it manually — upload, re-upload a corrected file, confirm the chunk count does not double.
 
 ---
 
