@@ -4,12 +4,20 @@
 // the two states a researcher is most likely to hit -- no key yet, and a key
 // the API rejects.
 
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useAuth } from 'react-oidc-context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { askQuestion, completeUpload, listDocuments, requestUpload, uploadToS3 } from './api/client'
+import {
+  askQuestion,
+  completeUpload,
+  deleteQuestion,
+  listDocuments,
+  listQuestions,
+  requestUpload,
+  uploadToS3,
+} from './api/client'
 import { ApiError } from './api/types'
 
 // The document functions are mocked too, not just askQuestion: App now mounts
@@ -22,6 +30,8 @@ vi.mock('./api/client', () => ({
   completeUpload: vi.fn(),
   listDocuments: vi.fn(),
   deleteDocument: vi.fn(),
+  listQuestions: vi.fn(),
+  deleteQuestion: vi.fn(),
 }))
 vi.mock('react-oidc-context', () => ({ useAuth: vi.fn() }))
 
@@ -59,6 +69,7 @@ async function provideKey(user: ReturnType<typeof userEvent.setup>) {
 }
 
 const listDocumentsMock = vi.mocked(listDocuments)
+const listQuestionsMock = vi.mocked(listQuestions)
 
 beforeEach(() => {
   askQuestionMock.mockReset()
@@ -66,6 +77,11 @@ beforeEach(() => {
   // also asserting on document rows they never set up.
   listDocumentsMock.mockReset()
   listDocumentsMock.mockResolvedValue([])
+  // Likewise an empty history, so existing tests see today's single-answer UI.
+  listQuestionsMock.mockReset()
+  listQuestionsMock.mockResolvedValue([])
+  vi.mocked(deleteQuestion).mockReset()
+  vi.mocked(deleteQuestion).mockResolvedValue(undefined)
   vi.mocked(requestUpload).mockReset()
   vi.mocked(uploadToS3).mockReset()
   vi.mocked(completeUpload).mockReset()
@@ -83,6 +99,7 @@ describe('App', () => {
   it('answers a question on the provided key and shows its sources', async () => {
     const user = userEvent.setup()
     askQuestionMock.mockResolvedValue({
+      id: 'q-1',
       answer: 'PIEZO channels transduce mechanical force.',
       sources: ['piezo.pdf', 'mechanosensation.pdf'],
     })
@@ -173,7 +190,11 @@ describe('App', () => {
     await user.type(screen.getByLabelText(/ask a question/i), QUESTION)
     await user.click(screen.getByRole('button', { name: /^ask$/i }))
 
-    askQuestionMock.mockResolvedValueOnce({ answer: 'PIEZO transduces force.', sources: [] })
+    askQuestionMock.mockResolvedValueOnce({
+      id: 'q-2',
+      answer: 'PIEZO transduces force.',
+      sources: [],
+    })
     await user.click(await screen.findByRole('button', { name: /try again/i }))
 
     expect(await screen.findByText('PIEZO transduces force.')).toBeInTheDocument()
@@ -299,6 +320,93 @@ describe('App, document library', () => {
     expect(
       await screen.findByText('No readable text was found in this file.'),
     ).toBeInTheDocument()
+  })
+})
+
+describe('App, question history', () => {
+  async function ask(user: ReturnType<typeof userEvent.setup>, question: string) {
+    await user.type(screen.getByLabelText(/ask a question/i), question)
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+  }
+
+  it('lets a researcher go back to an earlier answer', async () => {
+    const user = userEvent.setup()
+    askQuestionMock
+      .mockResolvedValueOnce({ id: 'q-1', answer: 'First answer.', sources: ['a.pdf'] })
+      .mockResolvedValueOnce({ id: 'q-2', answer: 'Second answer.', sources: ['b.pdf'] })
+    render(<App />)
+    await provideKey(user)
+
+    await ask(user, 'What does PIEZO do?')
+    await screen.findByText('First answer.')
+    await ask(user, 'Where is it expressed?')
+    await screen.findByText('Second answer.')
+    // Asking replaced the first answer on screen, as it always has.
+    expect(screen.queryByText('First answer.')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'What does PIEZO do?' }))
+
+    expect(screen.getByText('First answer.')).toBeInTheDocument()
+    expect(screen.getByText('a.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('Second answer.')).not.toBeInTheDocument()
+  })
+
+  it('shows history from earlier sessions as soon as the researcher signs in', async () => {
+    listQuestionsMock.mockResolvedValue([
+      {
+        id: 'q-old',
+        question: 'A question from last week',
+        answer: 'An answer from last week.',
+        sources: ['old.pdf'],
+        created_at: '2026-09-14T10:00:00Z',
+      },
+    ])
+    render(<App />)
+
+    expect(
+      await screen.findByRole('button', { name: 'A question from last week' }),
+    ).toBeInTheDocument()
+  })
+
+  it('clears the answer panel when the entry on screen is removed', async () => {
+    // Leaving it up would show an answer the history no longer has.
+    const user = userEvent.setup()
+    listQuestionsMock.mockResolvedValue([
+      {
+        id: 'q-old',
+        question: 'A question from last week',
+        answer: 'An answer from last week.',
+        sources: [],
+        created_at: '2026-09-14T10:00:00Z',
+      },
+    ])
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'A question from last week' }))
+    expect(screen.getByText('An answer from last week.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /remove "a question from last week"/i }))
+
+    expect(vi.mocked(deleteQuestion)).toHaveBeenCalledWith('q-old', TOKEN)
+    await waitFor(() =>
+      expect(screen.queryByText('An answer from last week.')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('still shows an answer that could not be saved to history', async () => {
+    // A null id means the history write failed server-side. The researcher
+    // paid for the answer, so it is shown -- it just does not join the list.
+    const user = userEvent.setup()
+    askQuestionMock.mockResolvedValueOnce({ id: null, answer: 'Unsaved answer.', sources: [] })
+    render(<App />)
+    await provideKey(user)
+
+    await ask(user, 'A question that will not be saved')
+
+    expect(await screen.findByText('Unsaved answer.')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'A question that will not be saved' }),
+    ).not.toBeInTheDocument()
   })
 })
 

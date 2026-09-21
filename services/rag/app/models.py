@@ -1,7 +1,7 @@
 """SQLAlchemy models for this project's own tables.
 
-Today that is one table: `documents`, a row per file a researcher uploaded.
-Chunks and embeddings are NOT here — `langchain_pg_collection` and
+Two tables: `documents`, a row per file a researcher uploaded, and
+`questions`, a researcher's question history. Chunks and embeddings are NOT here — `langchain_pg_collection` and
 `langchain_pg_embedding` are created and owned by langchain-postgres, and
 Alembic deliberately leaves them alone (see alembic/env.py).
 
@@ -26,7 +26,7 @@ from sqlalchemy import (
     false,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Postgres will invent names for constraints that do not have one, and those
@@ -179,3 +179,43 @@ class Document(Base):
 
     def __repr__(self) -> str:
         return f"<Document {self.filename!r} status={self.status!r}>"
+
+
+class Question(Base):
+    """One question a researcher asked, and the answer they got.
+
+    A flat history, not a conversation: each question is still answered on its
+    own, with no earlier question sent to Claude, so modelling threads here
+    would describe a behaviour the app does not have.
+    """
+
+    __tablename__ = "questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # The Cognito sub of whoever asked. Every read filters on it, exactly as
+    # retrieval and the documents table do.
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Filenames as they were when the question was answered, not a foreign key
+    # to documents. If a document is later deleted, its history still names it
+    # -- a truthful record of what the answer was grounded in at the time --
+    # and deleting a document never silently rewrites past answers.
+    sources: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        # Every read is "this researcher's questions, newest first".
+        Index("ix_questions_user_created", "user_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Question {self.question[:40]!r}>"

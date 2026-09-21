@@ -17,6 +17,7 @@ from app.models import (
     STATUS_PENDING,
     STATUS_READY,
     Document,
+    Question,
     _utcnow,
     include_object,
 )
@@ -126,3 +127,34 @@ def test_the_filter_only_suppresses_tables():
     an unrelated object sharing the name would be silently skipped.
     """
     assert include_object(None, "langchain_pg_embedding", "column", True, None) is True
+
+
+# --- question history --------------------------------------------------------
+
+
+def test_a_question_always_has_an_owner_and_an_answer():
+    """An unowned entry is unreachable; an unanswered one is not history."""
+    for column in ("user_id", "question", "answer", "sources", "created_at"):
+        assert Question.__table__.c[column].nullable is False, column
+
+
+def test_question_defaults_hold_outside_the_orm_too():
+    """Same rule as documents: a raw INSERT must not fail on NOT NULL."""
+    for column in ("sources", "created_at"):
+        assert Question.__table__.c[column].server_default is not None, column
+
+
+def test_history_is_indexed_for_the_one_query_it_serves():
+    """Every read is one researcher's questions, newest first."""
+    indexes = {index.name: [c.name for c in index.columns] for index in Question.__table__.indexes}
+
+    assert indexes["ix_questions_user_created"] == ["user_id", "created_at"]
+
+
+def test_sources_are_a_snapshot_not_a_link_to_documents():
+    """Deleting a document must not rewrite or break past answers.
+
+    A foreign key would do one or the other; a stored list of filenames does
+    neither, and stays a truthful record of what the answer used at the time.
+    """
+    assert not Question.__table__.c.sources.foreign_keys

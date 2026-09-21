@@ -212,3 +212,45 @@ button.link {
 .document .hint {
   margin: 0.35rem 0 0;
 }
+
+/* --- Question history ----------------------------------------------------- */
+
+.asked {
+  font-style: italic;
+  margin-top: 0;
+}
+
+.history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.history-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 0.5rem 0;
+}
+
+/* Takes the slack so the date and Remove stay right-aligned; min-width lets a
+   long question wrap instead of pushing them off the row. */
+.history-question {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.history-when {
+  white-space: nowrap;
+  margin: 0;
+}
+
+/* Marks the entry on screen. A left rule rather than colour alone, so it
+   reads the same for someone who cannot tell the colours apart. */
+.history-selected {
+  border-left: 3px solid currentColor;
+  padding-left: 0.5rem;
+}

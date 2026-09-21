@@ -9,6 +9,7 @@ import type {
   AskResponse,
   DocumentResponse,
   PresignedPostFields,
+  QuestionRecord,
   UploadResponse,
 } from './types'
 
@@ -217,6 +218,24 @@ export async function listDocuments(accessToken: string): Promise<DocumentRespon
   })
 
   return (await response.json()) as DocumentResponse[]
+}
+
+/** The researcher's past questions and answers, newest first. */
+export async function listQuestions(accessToken: string): Promise<QuestionRecord[]> {
+  const response = await request('/questions', {
+    method: 'GET',
+    headers: authHeaders(accessToken),
+  })
+
+  return (await response.json()) as QuestionRecord[]
+}
+
+/** Remove one entry from the researcher's history. Answers 204, with no body to read. */
+export async function deleteQuestion(questionId: string, accessToken: string): Promise<void> {
+  await request(`/questions/${questionId}`, {
+    method: 'DELETE',
+    headers: authHeaders(accessToken),
+  })
 }
 
 /** Remove a document: its chunks, its row, and its bytes. Answers 204, with no body to read. */
