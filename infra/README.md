@@ -179,6 +179,73 @@ chunk is stamped with a `sub` issued by this pool; a replacement pool issues
 different ones, so destroying it would leave every document owned by an
 identity nobody can sign in as. Disable it consciously or not at all.
 
+## Uploads and the ingestion worker (Phase 8)
+
+```
+  browser ──presigned POST──> S3 (users/{sub}/documents/)
+     │                              │
+     └── POST /complete ──> SQS ──> worker (Fargate) ──> RDS (pgvector)
+```
+
+The file never passes through the service. That is partly cost, but mostly
+necessity: **CloudFront caps a POST/PUT body at 1MB**, a hard service quota, so
+routing a real paper through `/api/*` could not work. The upload size limit is
+enforced by S3 itself through the presigned POST policy (`max_upload_bytes`),
+not by the API — there is no point at which the API could refuse an oversized
+file, because it never sees one.
+
+The worker is a **second ECS service running the same image**, started with
+`python -m app.worker` instead of uvicorn. One image, two services: no second
+build and no second ECR repository. It has no load balancer, no target group
+and no health check, because nothing connects to it.
+
+```powershell
+terraform output ingestion_queue_url   # set as RAG_INGESTION_QUEUE_URL to run either locally
+aws logs tail /ecs/biogent-worker --follow --profile biogent-admin
+```
+
+To pause ingestion without touching the API:
+
+```powershell
+terraform apply -var worker_desired_count=0
+```
+
+Uploads then queue up and sit at "processing" until a worker returns — visible
+to the researcher rather than silently lost. Raising the count above 1 is safe:
+deterministic chunk ids mean two workers on the same document overwrite rather
+than duplicate.
+
+**The documents bucket's CORS is now managed here** (`s3.tf`), though the bucket
+itself still is not. A bucket has exactly one CORS configuration, so Terraform
+owns all of it or none of it; it had none before this.
+
+## Schema migrations (Phase 8)
+
+This project's own tables are managed by Alembic from `services/rag`. The
+`langchain_pg_*` tables are not — langchain-postgres creates and owns those,
+and `alembic/env.py` filters them out of autogenerate.
+
+```powershell
+cd services/rag
+uv run alembic upgrade head
+uv run alembic current        # what is applied now
+uv run alembic history        # what exists
+```
+
+The connection comes from `db_credentials.get_database_url()`, the same
+Secrets Manager path the service uses, so there is no URL in `alembic.ini` to
+keep in sync or to leak.
+
+**Migrations are an operator step, run from a workstation — not part of the
+deploy.** `alembic/` is deliberately not in the container image
+(`.dockerignore`), and the workflow does not call it. Automating it would mean
+a deploy that can roll back to a previous image while the schema only moves
+forward, which needs its own thinking about backward-compatible migrations.
+Until then: apply the migration, confirm it, then deploy.
+
+Reaching RDS from a workstation needs your IP on the RDS security group, the
+same rule that lets `app.ingest` run locally.
+
 ## Cost
 
 Roughly **$50-60/month** on top of RDS: ALB ~$17, Fargate (1 vCPU / 4 GB,

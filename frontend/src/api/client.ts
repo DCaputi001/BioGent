@@ -4,7 +4,13 @@
 // callers never handle a raw Response or an unparsed body.
 
 import { ApiError } from './types'
-import type { ApiErrorBody, AskResponse } from './types'
+import type {
+  ApiErrorBody,
+  AskResponse,
+  DocumentResponse,
+  PresignedPostFields,
+  UploadResponse,
+} from './types'
 
 /** Header the API expects the researcher's Anthropic key in (see api.py). */
 const API_KEY_HEADER = 'X-Anthropic-Api-Key'
@@ -53,6 +59,31 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 /**
+ * Call the API and return the response, or throw a typed ApiError.
+ *
+ * Every exported function below goes through here, so "a network failure and
+ * a 500 are both an ApiError" is stated once rather than repeated per call.
+ */
+async function request(path: string, init: RequestInit): Promise<Response> {
+  let response: Response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, init)
+  } catch (cause) {
+    // An aborted request is the caller's own doing, not a failure to report.
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+    throw new ApiError('service_unreachable', UNREACHABLE_MESSAGE, true, 0)
+  }
+
+  if (!response.ok) throw await toApiError(response)
+  return response
+}
+
+/** The Cognito session, which decides whose documents a request can reach. */
+function authHeaders(accessToken: string): Record<string, string> {
+  return { Authorization: `Bearer ${accessToken}` }
+}
+
+/**
  * Ask one question, on the researcher's own Anthropic key.
  *
  * The key goes in a header, never a query string: URLs are written to server
@@ -68,27 +99,130 @@ export async function askQuestion(
   accessToken: string,
   signal?: AbortSignal,
 ): Promise<AskResponse> {
-  let response: Response
-  try {
-    response = await fetch(`${BASE_URL}/ask`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Two credentials answering two questions: the bearer token says whose
-        // documents to search, the key says whose Anthropic account pays.
-        Authorization: `Bearer ${accessToken}`,
-        [API_KEY_HEADER]: apiKey,
-      },
-      body: JSON.stringify({ question }),
-      signal,
-    })
-  } catch (cause) {
-    // An aborted request is the caller's own doing, not a failure to report.
-    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
-    throw new ApiError('service_unreachable', UNREACHABLE_MESSAGE, true, 0)
-  }
-
-  if (!response.ok) throw await toApiError(response)
+  const response = await request('/ask', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // Two credentials answering two questions: the bearer token says whose
+      // documents to search, the key says whose Anthropic account pays.
+      ...authHeaders(accessToken),
+      [API_KEY_HEADER]: apiKey,
+    },
+    body: JSON.stringify({ question }),
+    signal,
+  })
 
   return (await response.json()) as AskResponse
+}
+
+/**
+ * Step 1 of an upload: reserve a document and get permission to send the file.
+ *
+ * Returns a presigned POST, not an upload of its own -- the bytes go
+ * browser-to-S3 and never through the service. That is partly cost, but mostly
+ * necessity: CloudFront caps a request body at 1MB, well under a real paper.
+ */
+export async function requestUpload(
+  filename: string,
+  accessToken: string,
+): Promise<UploadResponse> {
+  const response = await request('/documents', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(accessToken) },
+    body: JSON.stringify({ filename }),
+  })
+
+  return (await response.json()) as UploadResponse
+}
+
+/**
+ * Step 2: send the file itself, straight to S3.
+ *
+ * Deliberately NOT routed through request() above. This talks to S3, not to
+ * our API: it must not carry the Cognito token (the presigned fields are the
+ * only credential involved, and sending a bearer token to a third party is
+ * both useless and a leak), and S3 answers with XML rather than our error
+ * shape, so the JSON parsing in toApiError would find nothing to read.
+ */
+export async function uploadToS3(
+  uploadUrl: string,
+  fields: PresignedPostFields,
+  file: File,
+): Promise<void> {
+  const form = new FormData()
+  for (const [name, value] of Object.entries(fields)) {
+    form.append(name, value)
+  }
+  // The file must be appended LAST. S3 ignores anything after the file part,
+  // so a field added below this line is silently dropped and the upload then
+  // fails its own policy check.
+  form.append('file', file)
+
+  let response: Response
+  try {
+    // No Content-Type header set by hand: the browser has to add the multipart
+    // boundary, and setting it here would omit that and break the parse.
+    response = await fetch(uploadUrl, { method: 'POST', body: form })
+  } catch {
+    throw new ApiError('upload_unreachable', 'Could not reach file storage. Try again.', true, 0)
+  }
+
+  if (response.ok) return
+
+  // S3 enforces the size limit through the presigned policy, so this is the
+  // one rejection a researcher can actually act on -- and it arrives from S3
+  // in XML, not from our API in the documented shape.
+  const body = await response.text().catch(() => '')
+  if (body.includes('EntityTooLarge')) {
+    throw new ApiError(
+      'file_too_large',
+      'That file is larger than the upload limit. Try a smaller file.',
+      false,
+      response.status,
+    )
+  }
+
+  throw new ApiError(
+    'upload_failed',
+    'The file could not be uploaded. Try again.',
+    true,
+    response.status,
+  )
+}
+
+/**
+ * Step 3: tell the API the bytes have landed, so it can queue the work.
+ *
+ * Separate from the upload because S3 cannot call back into the service. If
+ * this never runs -- the tab closes mid-upload -- the document stays visible
+ * as 'pending' rather than vanishing, and re-uploading reuses the same row.
+ */
+export async function completeUpload(
+  documentId: string,
+  accessToken: string,
+): Promise<DocumentResponse> {
+  const response = await request(`/documents/${documentId}/complete`, {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+  })
+
+  return (await response.json()) as DocumentResponse
+}
+
+/** The researcher's own documents and where each has got to. Polled while any is in progress. */
+export async function listDocuments(accessToken: string): Promise<DocumentResponse[]> {
+  const response = await request('/documents', {
+    method: 'GET',
+    headers: authHeaders(accessToken),
+  })
+
+  return (await response.json()) as DocumentResponse[]
+}
+
+/** Remove a document: its chunks, its row, and its bytes. Answers 204, with no body to read. */
+export async function deleteDocument(documentId: string, accessToken: string): Promise<void> {
+  await request(`/documents/${documentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(accessToken),
+  })
 }

@@ -103,6 +103,40 @@ variable "desired_count" {
   default     = 1
 }
 
+# --- Ingestion worker (Phase 8) ---
+
+variable "worker_cpu" {
+  description = "Fargate vCPU units for the ingestion worker. Docling parsing is CPU-bound, so this is what decides how long an upload takes."
+  type        = number
+  default     = 1024
+}
+
+variable "worker_memory" {
+  description = "Fargate memory (MiB) for the ingestion worker. Matches the API: it loads the same embedding model and PyTorch."
+  type        = number
+  default     = 4096
+}
+
+variable "worker_desired_count" {
+  description = <<-EOT
+    Running ingestion workers. One is enough for a handful of researchers --
+    documents queue up rather than being lost.
+
+    Set to 0 between sessions to stop paying for it; uploads then sit at
+    "processing" until a worker returns, which is visible to the researcher
+    rather than silent. Raising it above 1 is safe: deterministic chunk ids
+    mean two workers on the same document overwrite rather than duplicate.
+  EOT
+  type        = number
+  default     = 1
+}
+
+variable "max_upload_bytes" {
+  description = "Largest file a researcher may upload. Enforced by S3 itself through the presigned POST policy, not by the API."
+  type        = number
+  default     = 52428800 # 50 MB
+}
+
 variable "log_retention_days" {
   description = "CloudWatch retention. Logs are the only record of a failed request, but keeping them forever costs money for no benefit."
   type        = number

@@ -66,8 +66,17 @@ resource "aws_iam_role" "task" {
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
 }
 
-# Everything the application is allowed to do, and nothing more: read its own
-# database credentials, and read the documents bucket for --from-s3 ingestion.
+# Researcher uploads live under one prefix per user. Both roles below are
+# scoped to it rather than to the whole bucket, so neither can reach the
+# operator's bulk-ingest documents sitting at the bucket root.
+locals {
+  documents_bucket_arn = "arn:aws:s3:::${var.documents_bucket}"
+  user_uploads_arn     = "arn:aws:s3:::${var.documents_bucket}/users/*"
+}
+
+# Everything the API is allowed to do, and nothing more: read its own database
+# credentials, read the documents bucket for --from-s3 ingestion, write and
+# remove a researcher's uploads, and queue them for processing.
 data "aws_iam_policy_document" "task" {
   statement {
     sid       = "ReadDatabaseSecret"
@@ -79,9 +88,27 @@ data "aws_iam_policy_document" "task" {
     sid     = "ReadSourceDocuments"
     actions = ["s3:GetObject", "s3:ListBucket"]
     resources = [
-      "arn:aws:s3:::${var.documents_bucket}",
-      "arn:aws:s3:::${var.documents_bucket}/*",
+      local.documents_bucket_arn,
+      "${local.documents_bucket_arn}/*",
     ]
+  }
+
+  # PutObject is needed to SIGN a presigned upload, not to perform one: the
+  # signature grants only what the signer already holds, so a role without this
+  # produces URLs that S3 rejects.
+  statement {
+    sid       = "WriteResearcherUploads"
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = [local.user_uploads_arn]
+  }
+
+  # Send only. The API must never consume ingestion work -- that is the
+  # worker's job, and a request thread is the wrong place for a job that runs
+  # for minutes.
+  statement {
+    sid       = "QueueIngestionWork"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.ingestion.arn]
   }
 }
 
@@ -89,4 +116,49 @@ resource "aws_iam_role_policy" "task" {
   name   = "${var.project}-task"
   role   = aws_iam_role.task.id
   policy = data.aws_iam_policy_document.task.json
+}
+
+# --- The ingestion worker ----------------------------------------------------
+#
+# A separate role from the API's, not the same one reused. The two processes
+# need opposite halves of the same resources -- the API signs uploads and sends
+# messages, the worker reads objects and consumes messages -- and giving both
+# the union would let a bug in the request path drain the work queue.
+
+resource "aws_iam_role" "worker_task" {
+  name               = "${var.project}-ecs-worker-task"
+  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+}
+
+data "aws_iam_policy_document" "worker_task" {
+  statement {
+    sid       = "ReadDatabaseSecret"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.db_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadResearcherUploads"
+    actions   = ["s3:GetObject"]
+    resources = [local.user_uploads_arn]
+  }
+
+  # Receive and acknowledge, never send: a worker that could enqueue could
+  # requeue its own failures forever without the redrive policy noticing.
+  statement {
+    sid = "ConsumeIngestionWork"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:ChangeMessageVisibility",
+      "sqs:GetQueueAttributes",
+    ]
+    resources = [aws_sqs_queue.ingestion.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "worker_task" {
+  name   = "${var.project}-worker-task"
+  role   = aws_iam_role.worker_task.id
+  policy = data.aws_iam_policy_document.worker_task.json
 }

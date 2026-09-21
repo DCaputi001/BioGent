@@ -39,6 +39,19 @@ output "github_actions_role_arn" {
   value       = aws_iam_role.github_actions.arn
 }
 
+output "ingestion_queue_url" {
+  description = "Set as RAG_INGESTION_QUEUE_URL to run the API or worker locally against the real queue."
+  value       = aws_sqs_queue.ingestion.id
+}
+
+output "worker_service_name" {
+  value = aws_ecs_service.worker.name
+}
+
+output "worker_task_family" {
+  value = aws_ecs_task_definition.worker.family
+}
+
 output "cognito_user_pool_id" {
   description = "Set as RAG_COGNITO_USER_POOL_ID for the API. Not a secret."
   value       = aws_cognito_user_pool.main.id

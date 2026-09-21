@@ -9,10 +9,20 @@ import userEvent from '@testing-library/user-event'
 import { useAuth } from 'react-oidc-context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { askQuestion } from './api/client'
+import { askQuestion, completeUpload, listDocuments, requestUpload, uploadToS3 } from './api/client'
 import { ApiError } from './api/types'
 
-vi.mock('./api/client', () => ({ askQuestion: vi.fn() }))
+// The document functions are mocked too, not just askQuestion: App now mounts
+// useDocuments, which reads the library on sign-in. Left out, every test here
+// would fail inside the hook rather than on what it was actually checking.
+vi.mock('./api/client', () => ({
+  askQuestion: vi.fn(),
+  requestUpload: vi.fn(),
+  uploadToS3: vi.fn(),
+  completeUpload: vi.fn(),
+  listDocuments: vi.fn(),
+  deleteDocument: vi.fn(),
+}))
 vi.mock('react-oidc-context', () => ({ useAuth: vi.fn() }))
 
 // Stubbed because the real module reads VITE_COGNITO_* at import time, which
@@ -48,8 +58,17 @@ async function provideKey(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /save key/i }))
 }
 
+const listDocumentsMock = vi.mocked(listDocuments)
+
 beforeEach(() => {
   askQuestionMock.mockReset()
+  // An empty library by default, so tests about the question loop are not
+  // also asserting on document rows they never set up.
+  listDocumentsMock.mockReset()
+  listDocumentsMock.mockResolvedValue([])
+  vi.mocked(requestUpload).mockReset()
+  vi.mocked(uploadToS3).mockReset()
+  vi.mocked(completeUpload).mockReset()
   useAuthMock.mockReturnValue(signedIn())
 })
 
@@ -227,6 +246,60 @@ describe('App, signed out', () => {
     ).toBeInTheDocument()
   })
 
+})
+
+describe('App, document library', () => {
+  it('uploads a paper and shows it once the worker has read it', async () => {
+    // The whole Phase 8 loop through the UI: upload, watch the status move as
+    // the worker gets to it, then ask something grounded in that document.
+    const user = userEvent.setup()
+    vi.mocked(requestUpload).mockResolvedValue({
+      document_id: 'doc-1',
+      filename: 'piezo.pdf',
+      upload_url: 'https://bucket.s3.amazonaws.com/',
+      fields: { key: 'users/sub/documents/piezo.pdf' },
+      max_bytes: 52428800,
+    })
+    vi.mocked(uploadToS3).mockResolvedValue(undefined)
+    vi.mocked(completeUpload).mockResolvedValue({
+      id: 'doc-1',
+      filename: 'piezo.pdf',
+      status: 'processing',
+      chunk_count: null,
+      error_message: null,
+    })
+    // What the list returns after the upload: the worker has finished.
+    listDocumentsMock.mockResolvedValue([
+      { id: 'doc-1', filename: 'piezo.pdf', status: 'ready', chunk_count: 12, error_message: null },
+    ])
+    render(<App />)
+
+    await user.upload(
+      screen.getByLabelText(/choose a file/i),
+      new File(['bytes'], 'piezo.pdf', { type: 'application/pdf' }),
+    )
+
+    expect(await screen.findByText('piezo.pdf')).toBeInTheDocument()
+    expect(await screen.findByText(/ready/i)).toBeInTheDocument()
+    expect(vi.mocked(uploadToS3)).toHaveBeenCalled()
+  })
+
+  it('shows why a document could not be read', async () => {
+    listDocumentsMock.mockResolvedValue([
+      {
+        id: 'doc-2',
+        filename: 'scan.pdf',
+        status: 'failed',
+        chunk_count: null,
+        error_message: 'No readable text was found in this file.',
+      },
+    ])
+    render(<App />)
+
+    expect(
+      await screen.findByText('No readable text was found in this file.'),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('App, expired session', () => {

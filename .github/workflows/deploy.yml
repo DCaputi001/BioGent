@@ -25,9 +25,14 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: biogent-rag
   ECS_CLUSTER: biogent-cluster
-  ECS_SERVICE: biogent-rag
-  TASK_FAMILY: biogent-rag
-  CONTAINER_NAME: rag
+
+  # Both services run the SAME image and differ only in the command ECS gives
+  # it -- uvicorn for the API, `python -m app.worker` for the ingestion worker
+  # (see infra/worker.tf). So one build feeds both, and a service missing from
+  # this list silently keeps running whatever image it last got.
+  #
+  # Format: service:task-family:container-name, space separated.
+  DEPLOY_TARGETS: "biogent-rag:biogent-rag:rag biogent-worker:biogent-worker:worker"
 
 concurrency:
   # One deploy at a time. Two overlapping runs would race to update the same
@@ -37,7 +42,7 @@ concurrency:
 
 jobs:
   backend:
-    name: RAG service to ECS
+    name: API and ingestion worker to ECS
     runs-on: ubuntu-latest
     environment: production # the manual approval gate
     outputs:
@@ -65,34 +70,59 @@ jobs:
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: Register new task definition revision
-        id: task-def
+      - name: Roll out the new image to every service
         run: |
-          # Take the live definition, swap only the image, and register that.
-          # Everything else (env vars, roles, sizing) stays owned by Terraform.
-          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
-            --query taskDefinition > task-def.json
+          set -euo pipefail
 
-          jq --arg IMAGE "${{ steps.build.outputs.image }}" --arg NAME "$CONTAINER_NAME" '
-            .containerDefinitions = (
-              .containerDefinitions | map(if .name == $NAME then .image = $IMAGE else . end)
-            )
-            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                  .compatibilities, .registeredAt, .registeredBy)
-          ' task-def.json > new-task-def.json
+          # A service is only created by `terraform apply`, so a family that
+          # does not exist yet fails here rather than being skipped -- a
+          # silently un-deployed worker looks exactly like a healthy one that
+          # never receives work.
+          for target in $DEPLOY_TARGETS; do
+            IFS=':' read -r service family container <<< "$target"
+            echo "::group::$service"
 
-          ARN=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json \
-            --query taskDefinition.taskDefinitionArn --output text)
-          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+            # Take the live definition, swap only the image, and register that.
+            # Everything else (env vars, roles, sizing, the worker's command)
+            # stays owned by Terraform.
+            aws ecs describe-task-definition --task-definition "$family" \
+              --query taskDefinition > "task-def-$service.json"
 
-      - name: Deploy and wait for it to stabilize
+            jq --arg IMAGE "${{ steps.build.outputs.image }}" --arg NAME "$container" '
+              .containerDefinitions = (
+                .containerDefinitions | map(if .name == $NAME then .image = $IMAGE else . end)
+              )
+              | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                    .compatibilities, .registeredAt, .registeredBy)
+            ' "task-def-$service.json" > "new-task-def-$service.json"
+
+            ARN=$(aws ecs register-task-definition \
+              --cli-input-json "file://new-task-def-$service.json" \
+              --query taskDefinition.taskDefinitionArn --output text)
+
+            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$service" \
+              --task-definition "$ARN" >/dev/null
+            echo "$service -> $ARN"
+            echo "::endgroup::"
+          done
+
+      - name: Wait for every service to stabilize
         run: |
-          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
-            --task-definition "${{ steps.task-def.outputs.arn }}" >/dev/null
+          set -euo pipefail
 
+          # Waited on together, after all the updates, rather than one at a
+          # time: the rollouts run concurrently anyway, so serialising the
+          # waits would just add the slower one's time to the faster one's.
+          #
           # Fails the job if the new tasks never become healthy, so a broken
           # deploy surfaces here rather than as a researcher's error page.
-          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          SERVICES=""
+          for target in $DEPLOY_TARGETS; do
+            SERVICES="$SERVICES ${target%%:*}"
+          done
+
+          # shellcheck disable=SC2086 # deliberate word splitting into arguments
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services $SERVICES
 
   frontend:
     name: Web app to S3 + CloudFront

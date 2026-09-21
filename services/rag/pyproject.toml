@@ -33,6 +33,11 @@ dependencies = [
     # against a published JWKS endpoint. The [crypto] extra is what supplies RS256;
     # without it PyJWT can only handle symmetric algorithms and every token fails.
     "pyjwt[crypto]",
+    # Schema migrations for this project's own tables (app/models.py). The
+    # langchain_pg_* tables stay owned by langchain-postgres, which creates them
+    # itself; Alembic manages only what we define. SQLAlchemy is already a
+    # transitive dependency, so this adds the migration runner, not an ORM.
+    "alembic",
     # Listed explicitly, though docling and sentence-transformers would pull
     # them in anyway: a transitive dependency cannot be pointed at the CPU-only
     # index below, and a direct one can. torchvision has to be pinned to the
