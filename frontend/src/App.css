@@ -1,119 +1,698 @@
 /* App.css
-   Plain, readable layout for the Phase 4 skeleton. Intentionally undesigned:
-   the real visual work belongs to the onboarding-focused pass in step 8, and
-   anything elaborate here would be thrown away then. */
+   Layout and component styles. Tokens live in index.css.
 
-main {
-  max-width: 44rem;
-  margin: 0 auto;
-  padding: 2rem 1rem 4rem;
-  text-align: left;
+   The brief: clean and professional, modern, carrying the BioGent logo. The
+   one expressive element is the logo's spectral ring (SpectrumRing.tsx); the
+   rest is deliberately quiet -- no shadows, no gradients, hairline rules, and
+   corner radius set by what a thing is (rounded fields, pill buttons, square
+   columns) rather than one radius on everything. */
+
+/* --- Shell ------------------------------------------------------------------ */
+
+/* minmax(0, 1fr), not 1fr, on every track here. A bare 1fr will not shrink
+   below its content's minimum width, and a one-line truncated filename has a
+   minimum as long as the filename -- on a phone that pushed the whole page
+   wider than the screen instead of letting the ellipsis do its job. */
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
 }
 
-header h1 {
-  margin-bottom: 0.25rem;
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: 3.75rem;
+  padding: 0 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
 }
 
-header p {
-  margin-top: 0;
-  opacity: 0.8;
+.topbar .wordmark {
+  font-size: 1.625rem;
 }
 
-.panel {
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1.25rem;
+.account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
-.panel label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
+.account-email {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.panel input,
-.panel textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem;
-  margin-bottom: 0.75rem;
-  font: inherit;
-  border: 1px solid rgba(128, 128, 128, 0.5);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
+/* The reading pane takes the width; the library sits in a fixed column to its
+   right. Right rather than left so that screen order matches document order:
+   the reading pane is first for keyboard and screen-reader users too. */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22rem;
 }
+
+.reading {
+  padding: 2.75rem clamp(1.25rem, 5vw, 4.5rem) 4rem;
+  background: var(--surface);
+}
+
+/* A measure for reading, not the full pane: long lines of answer text are
+   hard to track back to the start of the next line. Centred in the pane, so a
+   wide screen leaves even margins rather than one empty band beside the
+   library. */
+.reading > * {
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+.rail {
+  padding: 2rem 1.5rem 3rem;
+  border-left: 1px solid var(--line);
+}
+
+/* Spacing by relationship rather than one gap for everything: a list sits
+   close under its own section, while a new section gets real separation. */
+.rail > * + * {
+  margin-top: 1rem;
+}
+
+.rail > .rail-section:not(:first-child) {
+  margin-top: 2.5rem;
+}
+
+.rail-section h2 {
+  font-size: var(--text-base);
+  margin-bottom: 0.9rem;
+}
+
+/* --- Wordmark and ring ------------------------------------------------------- */
+
+.wordmark {
+  font-family: var(--font-ui);
+  font-weight: 800;
+  /* Matched against the logo artwork, which is tracked looser than Nunito's
+     default at display weight. */
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* Sized and seated to the x-height, so the ring reads as a lowercase o in the
+   run of letters rather than a badge beside them. */
+.wordmark-o {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin: 0 0.03em;
+  vertical-align: -0.06em;
+}
+
+.spectrum-ring {
+  flex: none;
+}
+
+.spectrum-ring-spinning {
+  animation: ring-turn 1.6s linear infinite;
+}
+
+@keyframes ring-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Text helpers ---------------------------------------------------------- */
 
 .hint {
-  font-size: 0.875rem;
-  opacity: 0.75;
-  margin-bottom: 0;
+  margin-top: 0.5rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 650;
+}
+
+.field-error {
+  margin-top: 0.5rem;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+::selection {
+  background: var(--selection-tint);
+}
+
+/* --- Buttons ----------------------------------------------------------------- */
+
+.button-primary,
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.25rem;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  line-height: 1.3;
+  /* A button label never wraps: two-line "Save key" reads as two controls. */
+  white-space: nowrap;
+  flex: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.button-primary {
+  border: 1px solid var(--action);
+  background: var(--action);
+  color: var(--action-text);
+}
+
+.button-primary:hover:not(:disabled) {
+  border-color: var(--action-hover);
+  background: var(--action-hover);
+}
+
+.button-secondary {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.button-secondary:hover {
+  border-color: var(--ink);
+}
+
+.button-primary:disabled {
+  opacity: 0.35;
+}
+
+.button-large {
+  padding: 0.8rem 2rem;
+  font-size: 1.0625rem;
+}
+
+/* Inline actions inside sentences: read as a link, behave as a button. */
+.button-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--signal-text);
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.button-link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.button-quiet {
+  padding: 0.4rem 0.7rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.button-quiet:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* Remove is always visible rather than revealed on hover: hover does not exist
+   on a touch screen, and a hidden destructive action is a surprise. */
+.button-remove {
+  flex: none;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.button-remove:hover {
+  color: var(--danger);
+}
+
+/* --- Fields ----------------------------------------------------------------- */
+
+input[type='password'],
+input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-field);
+  background: var(--surface);
+}
+
+.inline-field {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+/* --- API key ---------------------------------------------------------------- */
+
+/* Before a key exists this is a step the researcher has to notice, so it gets
+   a tinted block; once a key is saved it drops to a single quiet line. */
+.key-setup {
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.25rem 1.1rem;
+  border-radius: var(--radius-field);
+  background: var(--selection-tint);
+}
+
+.key-setup label {
+  font-weight: 700;
 }
 
 .key-status {
-  margin-top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.9rem;
+  margin-bottom: 1.25rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
 }
 
-/* The model's paragraph breaks carry meaning, so keep them. */
-.answer {
+.key-status code {
+  color: var(--ink);
+}
+
+/* --- Ask ------------------------------------------------------------------- */
+
+.ask-label {
+  display: block;
+  margin-bottom: 0.9rem;
+  font-size: var(--text-xl);
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+/* The field and its button share one frame. The frame, not the textarea,
+   shows focus, so the whole composite reads as the thing being typed into. */
+.ask-field {
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 120ms ease;
+}
+
+.ask-field:focus-within {
+  border-color: var(--signal);
+  outline: 3px solid var(--selection-tint);
+}
+
+.ask-field textarea {
+  display: block;
+  width: 100%;
+  min-height: 5.75rem;
+  padding: 1rem 1.1rem 0.25rem;
+  border: 0;
+  background: transparent;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  /* A resize grip would sit inside the frame, beside the button; three rows
+     with scrolling fits any realistic question. */
+  resize: none;
+}
+
+.ask-field textarea:focus-visible {
+  outline: none;
+}
+
+.ask-field textarea:disabled {
+  cursor: not-allowed;
+}
+
+.ask-field textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+/* --- Answer ------------------------------------------------------------------ */
+
+.answer,
+.answer-state {
+  margin-top: 2.75rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+}
+
+/* The question heads its answer: once older answers can be brought back from
+   history, an answer without its question is ambiguous. */
+.answer-question {
+  margin-bottom: 1.1rem;
+  font-size: var(--text-lg);
+  font-weight: 750;
+}
+
+.answer-text {
+  max-width: 68ch;
+  font-family: var(--font-reading);
+  font-optical-sizing: auto;
+  font-size: var(--text-md);
+  line-height: 1.72;
   white-space: pre-wrap;
-  line-height: 1.6;
 }
 
 .sources {
-  margin: 0;
-  padding-left: 1.25rem;
-}
-
-.error {
-  border-color: #d64545;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
-  margin-top: 0.75rem;
-}
-
-.actions:empty {
-  margin-top: 0;
-}
-
-/* A button that reads as a link: used where the action navigates rather than
-   submits, while staying a real button for keyboard and screen-reader users. */
-button.link {
-  background: none;
-  border: none;
-  padding: 0;
-  color: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-/* --- Onboarding page ---
-   Narrower measure than the app: this is the one screen a researcher actually
-   reads rather than scans, and long lines are what makes instructions feel
-   harder than they are. */
-.help {
-  max-width: 34rem;
-  margin: 0 auto;
-  padding: 2rem 1rem 4rem;
-}
-
-.help h1 {
-  margin: 1rem 0 0.5rem;
-}
-
-.help h2 {
   margin-top: 2rem;
 }
 
-.help .lede {
-  font-size: 1.05rem;
-  line-height: 1.65;
+.sources h3 {
+  margin-bottom: 0.6rem;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.sources ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sources li {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* Before the first question: the mascot, and one line saying what will
+   appear here. */
+.answer-empty {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 3rem;
+  color: var(--muted);
+}
+
+.answer-empty p {
+  max-width: 24rem;
+}
+
+.answer-empty-mark {
+  flex: none;
+  height: auto;
+}
+
+/* --- Notices ------------------------------------------------------------------ */
+
+.notice {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-field);
+  background: var(--danger-tint);
+}
+
+.notice > p:first-child {
+  font-weight: 650;
+}
+
+.notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.notice-actions:empty {
+  display: none;
+}
+
+/* --- Library ------------------------------------------------------------------ */
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.25rem 1rem;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius-field);
+  background: var(--surface);
+  text-align: center;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.dropzone-active {
+  border-color: var(--signal);
+  background: var(--selection-tint);
+}
+
+.dropzone .hint {
+  margin-top: 0;
+}
+
+.file-button {
+  cursor: pointer;
+}
+
+/* The native input is hidden, so its focus is drawn on the label that stands
+   in for it -- without this a keyboard user could not see where they are. */
+.file-input:focus-visible + .file-button {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.file-input:disabled + .file-button {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.rail-empty {
+  margin-top: 1rem;
+}
+
+.documents,
+.history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history {
+  margin-top: 0.75rem;
+}
+
+.document {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.document-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* One line, truncated. Paper filenames are long runs of underscores with no
+   natural break, so wrapping split them mid-word; the full name is in the
+   title attribute. */
+.document-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.25rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.document-count {
+  margin-left: auto;
+}
+
+/* Finished states take a still dot in one of the ring's own colours; a
+   waiting document is hollow because nothing has happened to it yet. */
+.status-dot {
+  flex: none;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+}
+
+.status-dot-pending {
+  border: 1.5px solid var(--muted);
+}
+
+.status-dot-ready {
+  background: var(--spectrum-green);
+}
+
+.status-dot-failed {
+  background: var(--spectrum-red);
+}
+
+.history-item {
+  padding: 0.65rem 0.75rem;
+  border-left: 2px solid transparent;
+  border-radius: 0 8px 8px 0;
+}
+
+.history-item + .history-item {
+  margin-top: 0.15rem;
+}
+
+.history-selected {
+  border-left-color: var(--signal);
+  background: var(--selection-tint);
+}
+
+/* Two lines at most, so a long question does not push the rest of the
+   history out of view; the full text is in the answer pane when chosen. */
+.history-question {
+  display: -webkit-box;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  font-weight: 650;
+  line-height: 1.4;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.history-question:hover {
+  color: var(--signal-text);
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.2rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* --- Welcome ------------------------------------------------------------------ */
+
+/* The one place the mascot is shown at size: a researcher arriving for the
+   first time meets the character before anything asks them to act. */
+.welcome {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.welcome-mark {
+  height: auto;
+}
+
+.welcome-wordmark {
+  margin-top: 1.75rem;
+  font-size: var(--text-display);
+}
+
+.signin {
+  display: flex;
+  max-width: 28rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.signin > p:first-child {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.signin-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.signin .hint {
+  max-width: 22rem;
+  margin-top: 0;
+}
+
+.centered {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+
+/* --- Help ------------------------------------------------------------------------ */
+
+.help {
+  width: 100%;
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem;
+  font-size: 1.0625rem;
+}
+
+.help h1 {
+  margin-bottom: 1rem;
+  font-size: var(--text-xl);
+}
+
+.help h2 {
+  margin: 2.5rem 0 0.75rem;
+  font-size: 1.1875rem;
 }
 
 .help p,
@@ -121,136 +700,95 @@ button.link {
   line-height: 1.65;
 }
 
+.help .lede {
+  font-size: 1.125rem;
+  color: var(--muted);
+}
+
+.help ul {
+  padding-left: 1.25rem;
+}
+
+/* Numbered because these really are a sequence: each step depends on the
+   one before it. */
+.steps {
+  padding: 0;
+  counter-reset: step;
+  list-style: none;
+}
+
 .steps li {
-  margin-bottom: 1rem;
-  padding-left: 0.25rem;
+  position: relative;
+  margin-bottom: 1.1rem;
+  padding-left: 2.6rem;
+  counter-increment: step;
 }
 
-/* The credit-versus-key trap, given visual weight because it is the single
-   most common first-time failure. */
-.callout-heading {
-  margin-bottom: 0.5rem;
+.steps li::before {
+  position: absolute;
+  top: 0.05rem;
+  left: 0;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--selection-tint);
+  color: var(--signal-text);
+  content: counter(step);
+  font-size: var(--text-sm);
+  font-weight: 800;
 }
 
+/* The credit-versus-key trap, marked in the ring's orange because it is the
+   single most common first-time failure. */
 .callout {
-  border-left: 3px solid #d68c45;
-  padding: 0.5rem 0 0.5rem 1rem;
-  margin-top: 0;
+  padding: 0.85rem 1.1rem;
+  border-left: 3px solid var(--spectrum-orange);
+  background: var(--paper);
 }
 
-/* --- Document library (Phase 8) ------------------------------------------ */
-
-/* Dashed rather than solid, which is the conventional "drop something here"
-   affordance; the solid .panel border already surrounds it. */
-.dropzone {
-  border: 2px dashed rgba(128, 128, 128, 0.45);
-  border-radius: 8px;
-  padding: 1.25rem;
-  text-align: center;
+.help > .button-secondary {
+  margin-top: 2.5rem;
 }
 
-.dropzone-active {
-  border-color: currentColor;
-  background: rgba(128, 128, 128, 0.08);
+/* --- Narrow screens -------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The library follows the reading pane rather than sitting beside it. */
+  .rail {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .reading {
+    padding: 2rem 1.25rem 2.5rem;
+  }
 }
 
-.dropzone label {
-  display: block;
-  margin-bottom: 0.35rem;
-}
+@media (max-width: 560px) {
+  .topbar {
+    padding: 0 1rem;
+  }
 
-.dropzone input[type='file'] {
-  display: block;
-  margin: 0 auto 0.75rem;
-}
+  .account-email {
+    display: none;
+  }
 
-.documents {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
+  .ask-label {
+    font-size: var(--text-lg);
+  }
 
-.document {
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
-  padding: 0.6rem 0;
-}
+  .welcome-wordmark {
+    font-size: 2.5rem;
+  }
 
-.document-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-/* Takes the slack so the badge and Remove stay right-aligned as filenames
-   vary in length. min-width lets a long name shrink instead of pushing them
-   off the row. */
-.document-name {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.badge {
-  font-size: 0.85rem;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid rgba(128, 128, 128, 0.4);
-  white-space: nowrap;
-}
-
-/* Colour is a second signal only: the badge always carries its own text, so a
-   colour-blind reader loses nothing. */
-.badge-ready {
-  border-color: #3f8f5f;
-}
-
-.badge-failed {
-  border-color: #b3543f;
-}
-
-.document .error,
-.document .hint {
-  margin: 0.35rem 0 0;
-}
-
-/* --- Question history ----------------------------------------------------- */
-
-.asked {
-  font-style: italic;
-  margin-top: 0;
-}
-
-.history {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.history-item {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
-  padding: 0.5rem 0;
-}
-
-/* Takes the slack so the date and Remove stay right-aligned; min-width lets a
-   long question wrap instead of pushing them off the row. */
-.history-question {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-.history-when {
-  white-space: nowrap;
-  margin: 0;
-}
-
-/* Marks the entry on screen. A left rule rather than colour alone, so it
-   reads the same for someone who cannot tell the colours apart. */
-.history-selected {
-  border-left: 3px solid currentColor;
-  padding-left: 0.5rem;
+  .answer-empty {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

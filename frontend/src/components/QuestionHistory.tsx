@@ -20,7 +20,7 @@ export function QuestionHistory({ entries, selectedId, onSelect, onRemove }: Que
   if (entries.length === 0) return null
 
   return (
-    <section className="panel">
+    <section className="rail-section">
       <h2>Earlier questions</h2>
       <ul className="history">
         {entries.map((entry) => {
@@ -31,21 +31,23 @@ export function QuestionHistory({ entries, selectedId, onSelect, onRemove }: Que
                   keyboard and announced as something that can be activated. */}
               <button
                 type="button"
-                className="link history-question"
+                className="history-question"
                 aria-current={selected ? 'true' : undefined}
                 onClick={() => onSelect(entry)}
               >
                 {entry.question}
               </button>
-              <span className="hint history-when">{WHEN.format(new Date(entry.created_at))}</span>
-              <button
-                type="button"
-                className="link"
-                onClick={() => onRemove(entry.id)}
-                aria-label={`Remove "${entry.question}" from your history`}
-              >
-                Remove
-              </button>
+              <div className="history-meta">
+                <time dateTime={entry.created_at}>{WHEN.format(new Date(entry.created_at))}</time>
+                <button
+                  type="button"
+                  className="button-remove"
+                  onClick={() => onRemove(entry.id)}
+                  aria-label={`Remove "${entry.question}" from your history`}
+                >
+                  Remove
+                </button>
+              </div>
             </li>
           )
         })}

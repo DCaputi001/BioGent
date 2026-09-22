@@ -14,7 +14,7 @@ interface SignInPanelProps {
 export function SignInPanel({ onSignIn, onOpenHelp, error, configured }: SignInPanelProps) {
   if (!configured) {
     return (
-      <section className="panel error" role="alert">
+      <section className="notice signin" role="alert">
         <p>
           Sign-in is not configured in this build, so there is no way to reach your
           documents.
@@ -28,23 +28,23 @@ export function SignInPanel({ onSignIn, onOpenHelp, error, configured }: SignInP
   }
 
   return (
-    <section className="panel">
+    <section className="signin">
       <p>
         Sign in to upload research documents and ask questions grounded in them. Your
         documents are visible only to you.
       </p>
 
       {error && (
-        <p className="error" role="alert">
+        <p className="field-error" role="alert">
           That sign-in did not complete: {error.message}
         </p>
       )}
 
-      <div className="actions">
-        <button type="button" onClick={onSignIn}>
+      <div className="signin-actions">
+        <button type="button" className="button-primary button-large" onClick={onSignIn}>
           Sign in
         </button>
-        <button type="button" className="link" onClick={onOpenHelp}>
+        <button type="button" className="button-link" onClick={onOpenHelp}>
           How do I get an Anthropic API key?
         </button>
       </div>

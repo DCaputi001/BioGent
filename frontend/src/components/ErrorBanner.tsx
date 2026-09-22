@@ -31,17 +31,17 @@ export function ErrorBanner({
   const hint = localHintFor(error)
 
   return (
-    <section className="panel error" role="alert">
+    <section className="notice" role="alert">
       <p>{error.message}</p>
       {hint && <p className="hint">{hint}</p>}
 
-      <div className="actions">
+      <div className="notice-actions">
         {remedy === 'fix-key' && (
           <>
-            <button type="button" onClick={onUpdateKey}>
+            <button type="button" className="button-secondary" onClick={onUpdateKey}>
               Use a different key
             </button>
-            <button type="button" className="link" onClick={onOpenHelp}>
+            <button type="button" className="button-link" onClick={onOpenHelp}>
               How do I get a key?
             </button>
           </>
@@ -54,13 +54,13 @@ export function ErrorBanner({
         )}
 
         {remedy === 'sign-in' && (
-          <button type="button" onClick={onSignIn}>
+          <button type="button" className="button-secondary" onClick={onSignIn}>
             Sign in again
           </button>
         )}
 
         {remedy === 'retry' && (
-          <button type="button" onClick={onRetry}>
+          <button type="button" className="button-secondary" onClick={onRetry}>
             Try again
           </button>
         )}
