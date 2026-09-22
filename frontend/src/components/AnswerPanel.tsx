@@ -1,6 +1,9 @@
 // AnswerPanel.tsx
-// Renders an answer, the question it answers, and the documents it came from,
-// plus the waiting state.
+// The reading pane's main content: an answer, the question it answers, and the
+// papers it came from -- or the waiting state, or an invitation to ask.
+
+import { Mascot } from './Mascot'
+import { SpectrumRing } from './SpectrumRing'
 
 /**
  * What the panel shows: the latest answer, or one brought back from history.
@@ -23,8 +26,11 @@ interface AnswerPanelProps {
 export function AnswerPanel({ pending, answer }: AnswerPanelProps) {
   if (pending) {
     return (
-      <section className="panel" aria-live="polite">
-        <p>Searching your documents...</p>
+      <section className="answer-state" aria-live="polite">
+        <p className="status-line">
+          <SpectrumRing size="1.5rem" spinning />
+          Searching your documents...
+        </p>
         {/* The first question after the service starts loads the embedding
             model, which takes several seconds. Saying so prevents it reading
             as a hang. */}
@@ -33,26 +39,36 @@ export function AnswerPanel({ pending, answer }: AnswerPanelProps) {
     )
   }
 
-  if (!answer) return null
+  if (!answer) {
+    return (
+      <section className="answer-empty">
+        <Mascot width={96} className="answer-empty-mark" />
+        <p>
+          Answers appear here, drawn only from the papers in your library, with the sources
+          they came from.
+        </p>
+      </section>
+    )
+  }
 
   return (
-    <section className="panel" aria-live="polite">
-      <h2>Answer</h2>
-      <p className="hint asked">{answer.question}</p>
-      {/* pre-wrap: the model's paragraph breaks are meaningful and would
-          otherwise collapse into one block of text. */}
-      <p className="answer">{answer.answer}</p>
+    <article className="answer" aria-live="polite">
+      <h2 className="answer-question">{answer.question}</h2>
+      {/* Set in the reading serif: an answer is prose to be read closely, not
+          interface to be scanned. pre-wrap keeps the model's paragraph breaks,
+          which would otherwise collapse into one block. */}
+      <p className="answer-text">{answer.answer}</p>
 
       {answer.sources.length > 0 && (
-        <>
-          <h3>Sources</h3>
-          <ul className="sources">
+        <section className="sources" aria-labelledby="sources-heading">
+          <h3 id="sources-heading">Sources</h3>
+          <ul>
             {answer.sources.map((source) => (
               <li key={source}>{source}</li>
             ))}
           </ul>
-        </>
+        </section>
       )}
-    </section>
+    </article>
   )
 }

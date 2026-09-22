@@ -23,19 +23,31 @@ export function QuestionForm({ disabled, pending, onSubmit }: QuestionFormProps)
   }
 
   return (
-    <form className="panel" onSubmit={handleSubmit}>
-      <label htmlFor="question">Ask a question about your documents</label>
-      <textarea
-        id="question"
-        rows={3}
-        value={question}
-        disabled={disabled}
-        placeholder="What role does PIEZO play in mechanosensation?"
-        onChange={(event) => setQuestion(event.target.value)}
-      />
-      <button type="submit" disabled={disabled || pending || !question.trim()}>
-        {pending ? 'Searching...' : 'Ask'}
-      </button>
+    <form className="ask" onSubmit={handleSubmit}>
+      <label htmlFor="question" className="ask-label">
+        Ask a question about your documents
+      </label>
+      {/* The field and its button share one frame, so the action reads as part
+          of the question rather than a separate control below it. */}
+      <div className="ask-field">
+        <textarea
+          id="question"
+          rows={3}
+          value={question}
+          disabled={disabled}
+          placeholder="What role does PIEZO play in mechanosensation?"
+          onChange={(event) => setQuestion(event.target.value)}
+        />
+        <div className="ask-actions">
+          <button
+            type="submit"
+            className="button-primary"
+            disabled={disabled || pending || !question.trim()}
+          >
+            {pending ? 'Searching...' : 'Ask'}
+          </button>
+        </div>
+      </div>
       {disabled && !pending && (
         <p className="hint">Add your API key above to start asking questions.</p>
       )}

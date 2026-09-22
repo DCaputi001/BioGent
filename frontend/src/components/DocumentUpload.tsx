@@ -7,6 +7,7 @@
 // is the real control and the drop zone is the shortcut.
 
 import { useRef, useState } from 'react'
+import { SpectrumRing } from './SpectrumRing'
 
 /** Must match storage.SUPPORTED_SUFFIXES -- anything else ingests as nothing. */
 const ACCEPTED_SUFFIXES = ['.pdf', '.txt', '.md']
@@ -73,7 +74,7 @@ export function DocumentUpload({
   const busy = uploading || disabled
 
   return (
-    <section className="panel">
+    <section className="rail-section">
       <h2>Your documents</h2>
 
       <div
@@ -90,20 +91,31 @@ export function DocumentUpload({
           if (!busy) handleFiles(event.dataTransfer.files)
         }}
       >
-        <p>{uploading ? 'Uploading...' : 'Drop a paper here, or'}</p>
+        {uploading ? (
+          <p className="status-line">
+            <SpectrumRing size="1.1rem" spinning />
+            Uploading...
+          </p>
+        ) : (
+          <p>Drop a paper here, or</p>
+        )}
 
-        {/* The real control. Visually plain, but reachable by keyboard and
-            announced by a screen reader, which the drop zone is not -- so it
-            carries a real label rather than relying on the text above it. */}
-        <label htmlFor="document-file">Choose a file</label>
+        {/* The real control, hidden visually but still focusable and
+            announced, with its label drawn as the button. It comes before the
+            label so the label can show the input's keyboard focus. The drop
+            zone alone would be unusable by keyboard or screen reader. */}
         <input
           id="document-file"
+          className="visually-hidden file-input"
           ref={inputRef}
           type="file"
           accept={ACCEPTED_SUFFIXES.join(',')}
           disabled={busy}
           onChange={(event) => handleFiles(event.target.files)}
         />
+        <label htmlFor="document-file" className="button-secondary file-button">
+          Choose a file
+        </label>
 
         <p className="hint">
           {ACCEPTED_SUFFIXES.join(', ')} up to {describeSize(maxBytes)}. Only you can see
@@ -112,7 +124,7 @@ export function DocumentUpload({
       </div>
 
       {rejection && (
-        <p className="error" role="alert">
+        <p className="field-error" role="alert">
           {rejection}
         </p>
       )}

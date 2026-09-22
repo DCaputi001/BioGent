@@ -2,6 +2,10 @@
 // Where the researcher provides their own Anthropic API key, and the only
 // place it is entered. Shows a masked confirmation once set, so the key is
 // never rendered back to the screen in full.
+//
+// Two shapes on purpose. Before a key exists it is a setup step that has to be
+// noticed; afterwards it is a single quiet line, because it no longer asks
+// anything of the researcher.
 
 import { useState } from 'react'
 import type { ApiKeyState } from '../hooks/useApiKey'
@@ -31,40 +35,42 @@ export function ApiKeyPanel({ keyState, onOpenHelp }: ApiKeyPanelProps) {
 
   if (hasKey) {
     return (
-      <section className="panel">
-        <p className="key-status">
+      <div className="key-status">
+        <p>
           Using your API key <code>{maskKey(apiKey)}</code>
         </p>
-        <button type="button" onClick={clearKey}>
+        <button type="button" className="button-link" onClick={clearKey}>
           Use a different key
         </button>
-      </section>
+      </div>
     )
   }
 
   return (
-    <section className="panel">
+    <section className="key-setup">
       <form onSubmit={handleSubmit}>
         <label htmlFor="api-key">Your Anthropic API key</label>
-        <input
-          id="api-key"
-          // type=password so the key is not readable over a shoulder or in a
-          // screen share, and so browsers do not store it as form history.
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="sk-ant-..."
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <button type="submit" disabled={!draft.trim()}>
-          Save key
-        </button>
+        <div className="inline-field">
+          <input
+            id="api-key"
+            // type=password so the key is not readable over a shoulder or in a
+            // screen share, and so browsers do not store it as form history.
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="sk-ant-..."
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button type="submit" className="button-primary" disabled={!draft.trim()}>
+            Save key
+          </button>
+        </div>
       </form>
       <p className="hint">
-        Your key stays in this browser tab, is sent with each question, and is
-        never stored on our servers.{' '}
-        <button type="button" className="link" onClick={onOpenHelp}>
+        Your key stays in this browser tab, is sent with each question, and is never stored on
+        our servers.{' '}
+        <button type="button" className="button-link" onClick={onOpenHelp}>
           How do I get a key?
         </button>
       </p>

@@ -21,9 +21,12 @@ import { DocumentList } from './components/DocumentList'
 import { DocumentUpload } from './components/DocumentUpload'
 import { ErrorBanner } from './components/ErrorBanner'
 import { HelpPage } from './components/HelpPage'
+import { Mascot } from './components/Mascot'
 import { QuestionForm } from './components/QuestionForm'
 import { QuestionHistory } from './components/QuestionHistory'
 import { SignInPanel } from './components/SignInPanel'
+import { SpectrumRing } from './components/SpectrumRing'
+import { Wordmark } from './components/Wordmark'
 import { useApiKey } from './hooks/useApiKey'
 import { useDocuments } from './hooks/useDocuments'
 import { useQuestionHistory } from './hooks/useQuestionHistory'
@@ -161,19 +164,20 @@ function App() {
 
   if (auth.isLoading) {
     return (
-      <main>
-        <p aria-live="polite">Checking your sign-in...</p>
+      <main className="centered">
+        <p className="status-line" aria-live="polite">
+          <SpectrumRing size="1.25rem" spinning />
+          Checking your sign-in...
+        </p>
       </main>
     )
   }
 
   if (!auth.isAuthenticated) {
     return (
-      <main>
-        <header>
-          <h1>BioGent</h1>
-          <p>Ask questions about your research documents and get grounded answers.</p>
-        </header>
+      <main className="welcome">
+        <Mascot width={168} className="welcome-mark" />
+        <Wordmark as="h1" className="welcome-wordmark" />
 
         <SignInPanel
           configured={isAuthConfigured}
@@ -185,65 +189,69 @@ function App() {
     )
   }
 
+  // The actions every error banner can offer. The retry differs per banner,
+  // since each retries its own request; these do not.
+  const remedies = {
+    onUpdateKey: handleUpdateKey,
+    onOpenHelp: () => setShowHelp(true),
+    onSignIn: () => void auth.signinRedirect(),
+  }
+
   return (
-    <main>
-      <header>
-        <h1>BioGent</h1>
-        <p>Ask questions about your research documents and get grounded answers.</p>
-        <p className="hint">
-          Signed in as {auth.user?.profile.email ?? 'your account'}.{' '}
-          <button type="button" className="link" onClick={handleSignOut}>
+    <div className="shell">
+      <header className="topbar">
+        <Wordmark as="h1" />
+        <div className="account">
+          <span className="account-email">{auth.user?.profile.email ?? 'your account'}</span>
+          <button type="button" className="button-quiet" onClick={handleSignOut}>
             Sign out
           </button>
-        </p>
+        </div>
       </header>
 
-      <ApiKeyPanel keyState={keyState} onOpenHelp={() => setShowHelp(true)} />
+      {/* The reading pane comes first in the document as well as on screen,
+          so keyboard and screen-reader order match what a researcher sees. */}
+      <div className="workspace">
+        <main className="reading">
+          <ApiKeyPanel keyState={keyState} onOpenHelp={() => setShowHelp(true)} />
+          <QuestionForm disabled={!keyState.hasKey} pending={pending} onSubmit={runQuestion} />
+          <ErrorBanner error={error} onRetry={() => runQuestion(lastQuestion)} {...remedies} />
+          <AnswerPanel pending={pending} answer={answer} />
+        </main>
 
-      <DocumentUpload
-        onUpload={(file) => void library.upload(file)}
-        uploading={library.uploading}
-        maxBytes={DEFAULT_MAX_UPLOAD_BYTES}
-      />
-      {/* Its own banner rather than the shared one below: a failed upload and
-          a failed question are unrelated, and routing both through one slot
-          would let either wipe the other's message off the screen. */}
-      <ErrorBanner
-        error={library.error}
-        onRetry={() => void library.refresh()}
-        onUpdateKey={handleUpdateKey}
-        onOpenHelp={() => setShowHelp(true)}
-        onSignIn={() => void auth.signinRedirect()}
-      />
-      <DocumentList
-        documents={library.documents}
-        onRemove={(documentId) => void library.remove(documentId)}
-      />
+        <aside className="rail" aria-label="Your library">
+          <DocumentUpload
+            onUpload={(file) => void library.upload(file)}
+            uploading={library.uploading}
+            maxBytes={DEFAULT_MAX_UPLOAD_BYTES}
+          />
+          {/* Its own banner rather than the reading pane's: a failed upload and
+              a failed question are unrelated, and sharing one slot would let
+              either wipe the other's message off the screen. */}
+          <ErrorBanner
+            error={library.error}
+            onRetry={() => void library.refresh()}
+            {...remedies}
+          />
+          <DocumentList
+            documents={library.documents}
+            onRemove={(documentId) => void library.remove(documentId)}
+          />
 
-      <QuestionForm disabled={!keyState.hasKey} pending={pending} onSubmit={runQuestion} />
-      <ErrorBanner
-        error={error}
-        onRetry={() => runQuestion(lastQuestion)}
-        onUpdateKey={handleUpdateKey}
-        onOpenHelp={() => setShowHelp(true)}
-        onSignIn={() => void auth.signinRedirect()}
-      />
-      <AnswerPanel pending={pending} answer={answer} />
-
-      <QuestionHistory
-        entries={history.entries}
-        selectedId={answer?.id ?? null}
-        onSelect={showFromHistory}
-        onRemove={(questionId) => void removeFromHistory(questionId)}
-      />
-      <ErrorBanner
-        error={history.error}
-        onRetry={() => void history.refresh()}
-        onUpdateKey={handleUpdateKey}
-        onOpenHelp={() => setShowHelp(true)}
-        onSignIn={() => void auth.signinRedirect()}
-      />
-    </main>
+          <QuestionHistory
+            entries={history.entries}
+            selectedId={answer?.id ?? null}
+            onSelect={showFromHistory}
+            onRemove={(questionId) => void removeFromHistory(questionId)}
+          />
+          <ErrorBanner
+            error={history.error}
+            onRetry={() => void history.refresh()}
+            {...remedies}
+          />
+        </aside>
+      </div>
+    </div>
   )
 }
 
