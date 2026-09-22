@@ -13,13 +13,16 @@ case slower. One case below deliberately skips the override, to confirm the
 endpoint is closed by default rather than open when nothing stubs it.
 """
 
+import contextlib
+import uuid
+
 import httpx
 import pytest
 from anthropic import AuthenticationError, RateLimitError
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-from app import api, query
+from app import api, db, query, questions
 from app.auth import require_user
 
 API_KEY = "sk-ant-test-key"
@@ -35,8 +38,33 @@ def _anthropic_response(status_code: int) -> httpx.Response:
     )
 
 
+HISTORY_ID = uuid.UUID("99999999-8888-7777-6666-555555555555")
+
+
+class _SavedEntry:
+    id = HISTORY_ID
+
+
 @pytest.fixture
-def recorded_calls(monkeypatch) -> list[dict]:
+def saved_history(monkeypatch) -> list[dict]:
+    """Stub the history write and record what /ask saved.
+
+    Without this every /ask test would try to reach a real database for the
+    history write -- slow, and a test of the environment rather than the API.
+    """
+    saved: list[dict] = []
+
+    def fake_record(session, user_id, question, answer, sources):
+        saved.append({"user_id": user_id, "question": question, "sources": sources})
+        return _SavedEntry()
+
+    monkeypatch.setattr(db, "session_scope", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(questions, "record", fake_record)
+    return saved
+
+
+@pytest.fixture
+def recorded_calls(monkeypatch, saved_history) -> list[dict]:
     """Stub the chain with a successful answer and record what it was passed."""
     calls: list[dict] = []
 
@@ -125,6 +153,7 @@ def test_answers_question_on_callers_key(client, recorded_calls):
 
     assert response.status_code == 200
     assert response.json() == {
+        "id": str(HISTORY_ID),
         "answer": "PIEZO channels transduce mechanical force.",
         "sources": [SOURCE],
     }

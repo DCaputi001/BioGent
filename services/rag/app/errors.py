@@ -123,6 +123,15 @@ def document_not_found() -> ApiError:
     )
 
 
+def question_not_found() -> ApiError:
+    """Same answer for "does not exist" and "is not yours", as for documents."""
+    return ApiError(
+        404,
+        "question_not_found",
+        "That question is not in your history. It may have been removed.",
+    )
+
+
 def unsupported_file_type(suffix: str, supported: tuple[str, ...]) -> ApiError:
     return ApiError(
         415,

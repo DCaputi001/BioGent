@@ -6,9 +6,25 @@
 
 /** Successful POST /ask response. */
 export interface AskResponse {
+  /**
+   * The history entry this answer was saved as. Null when saving failed --
+   * the answer still arrives, it just is not in the history list.
+   */
+  id: string | null
   answer: string
   /** Filenames of the documents the answer was grounded in. */
   sources: string[]
+}
+
+/** One entry of GET /api/questions: a past question and its answer. */
+export interface QuestionRecord {
+  id: string
+  question: string
+  answer: string
+  /** Filenames as they were when answered; may name a since-deleted document. */
+  sources: string[]
+  /** ISO 8601 timestamp. */
+  created_at: string
 }
 
 /**

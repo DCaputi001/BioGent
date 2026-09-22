@@ -23,21 +23,23 @@ Run locally:
 
 import logging
 import uuid
+from datetime import datetime
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Request, status
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import config, db, documents, ingest, query, queue, storage
+from app import config, db, documents, ingest, query, questions, queue, storage
 from app.auth import require_user
 from app.errors import (
     ApiError,
     ErrorResponse,
     document_not_found,
     missing_api_key,
+    question_not_found,
     to_api_error,
     unsupported_file_type,
     upload_not_configured,
@@ -83,11 +85,34 @@ class AskRequest(BaseModel):
 
 
 class AskResponse(BaseModel):
+    # The history entry this answer was saved as. Null when saving failed: the
+    # answer is still returned, since the researcher already paid for it.
+    id: uuid.UUID | None = None
     answer: str
     sources: list[str] = Field(
         default_factory=list,
         description="Filenames of the documents the answer was grounded in.",
     )
+
+
+class QuestionResponse(BaseModel):
+    """One entry of a researcher's question history."""
+
+    id: uuid.UUID
+    question: str
+    answer: str
+    sources: list[str]
+    created_at: datetime
+
+    @classmethod
+    def of(cls, entry) -> "QuestionResponse":
+        return cls(
+            id=entry.id,
+            question=entry.question,
+            answer=entry.answer,
+            sources=entry.sources,
+            created_at=entry.created_at,
+        )
 
 
 class UploadRequest(BaseModel):
@@ -208,7 +233,27 @@ def ask(
         logger.exception("POST /ask failed: %s", error.code)
         raise error from exc
 
-    return AskResponse(answer=result["answer"], sources=result["sources"])
+    history_id = _record_in_history(user_id, request.question, result)
+    return AskResponse(id=history_id, answer=result["answer"], sources=result["sources"])
+
+
+def _record_in_history(user_id: str, question: str, result: dict) -> uuid.UUID | None:
+    """Save an answered question to the researcher's history.
+
+    Deliberately never raises. The answer has already been produced and paid
+    for on the researcher's Anthropic key; failing the request because the
+    history write failed would throw that answer away over a secondary
+    feature. The failure is logged, and the UI simply gets no id to select.
+    """
+    try:
+        with db.session_scope() as session:
+            entry = questions.record(
+                session, user_id, question, result["answer"], result["sources"]
+            )
+            return entry.id
+    except Exception:
+        logger.exception("Answered, but could not save the question to history")
+        return None
 
 
 def _load_owned_document(session, user_id: str, document_id: uuid.UUID):
@@ -335,6 +380,43 @@ def delete_document(document_id: uuid.UUID, user_id: str = Depends(require_user)
     except Exception as exc:
         error = to_api_error(exc)
         logger.exception("DELETE /documents/{id} failed: %s", error.code)
+        raise error from exc
+
+
+@router.get("/questions", response_model=list[QuestionResponse])
+def list_questions(
+    user_id: str = Depends(require_user),
+    limit: int = Query(
+        default=questions.DEFAULT_HISTORY_LIMIT, ge=1, le=questions.MAX_HISTORY_LIMIT
+    ),
+) -> list[QuestionResponse]:
+    """This researcher's past questions and answers, newest first."""
+    try:
+        with db.session_scope() as session:
+            return [
+                QuestionResponse.of(entry)
+                for entry in questions.list_for_user(session, user_id, limit)
+            ]
+    except Exception as exc:
+        error = to_api_error(exc)
+        logger.exception("GET /questions failed: %s", error.code)
+        raise error from exc
+
+
+@router.delete("/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_question(question_id: uuid.UUID, user_id: str = Depends(require_user)) -> None:
+    """Remove one entry from this researcher's history."""
+    try:
+        with db.session_scope() as session:
+            entry = questions.get(session, user_id, question_id)
+            if entry is None:
+                raise question_not_found()
+            questions.delete(session, entry)
+    except ApiError:
+        raise
+    except Exception as exc:
+        error = to_api_error(exc)
+        logger.exception("DELETE /questions/{id} failed: %s", error.code)
         raise error from exc
 
 

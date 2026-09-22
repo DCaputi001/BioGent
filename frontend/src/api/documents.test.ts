@@ -10,7 +10,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   completeUpload,
   deleteDocument,
+  deleteQuestion,
   listDocuments,
+  listQuestions,
   requestUpload,
   uploadToS3,
 } from './client'
@@ -257,5 +259,59 @@ describe('deleteDocument', () => {
     const error = await deleteDocument(DOCUMENT_ID, ACCESS_TOKEN).catch((caught) => caught)
 
     expect(error.code).toBe('document_not_found')
+  })
+})
+
+describe('listQuestions', () => {
+  it('returns the researcher’s history with the session attached', async () => {
+    const fetchMock = mockFetch(
+      jsonResponse([
+        {
+          id: 'q-1',
+          question: 'What does PIEZO do?',
+          answer: 'It transduces force.',
+          sources: ['piezo.pdf'],
+          created_at: '2026-09-21T12:00:00Z',
+        },
+      ]),
+    )
+
+    const history = await listQuestions(ACCESS_TOKEN)
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url.endsWith('/questions')).toBe(true)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${ACCESS_TOKEN}`)
+    expect(history[0].question).toBe('What does PIEZO do?')
+  })
+})
+
+describe('deleteQuestion', () => {
+  it('sends a DELETE for that entry and expects no body back', async () => {
+    const fetchMock = mockFetch(new Response(null, { status: 204 }))
+
+    await expect(deleteQuestion('q-1', ACCESS_TOKEN)).resolves.toBeUndefined()
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(init.method).toBe('DELETE')
+    expect(url.endsWith('/questions/q-1')).toBe(true)
+  })
+
+  it('surfaces another researcher’s entry as not found', async () => {
+    mockFetch(
+      jsonResponse(
+        {
+          error: {
+            code: 'question_not_found',
+            message: 'That question is not in your history.',
+            retryable: false,
+          },
+        },
+        404,
+      ),
+    )
+
+    const error = await deleteQuestion('q-1', ACCESS_TOKEN).catch((caught) => caught)
+
+    expect(error.code).toBe('question_not_found')
   })
 })

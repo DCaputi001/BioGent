@@ -12,18 +12,26 @@ import { useAuth } from 'react-oidc-context'
 import './App.css'
 import { askQuestion } from './api/client'
 import { ApiError } from './api/types'
-import type { AskResponse } from './api/types'
+import type { QuestionRecord } from './api/types'
 import { hostedSignOutUrl, isAuthConfigured } from './auth/oidcConfig'
 import { AnswerPanel } from './components/AnswerPanel'
+import type { ShownAnswer } from './components/AnswerPanel'
 import { ApiKeyPanel } from './components/ApiKeyPanel'
 import { DocumentList } from './components/DocumentList'
 import { DocumentUpload } from './components/DocumentUpload'
 import { ErrorBanner } from './components/ErrorBanner'
 import { HelpPage } from './components/HelpPage'
 import { QuestionForm } from './components/QuestionForm'
+import { QuestionHistory } from './components/QuestionHistory'
 import { SignInPanel } from './components/SignInPanel'
 import { useApiKey } from './hooks/useApiKey'
 import { useDocuments } from './hooks/useDocuments'
+import { useQuestionHistory } from './hooks/useQuestionHistory'
+
+/** The answer panel's contents, plus which history entry it came from, if any. */
+interface Shown extends ShownAnswer {
+  id: string | null
+}
 
 /**
  * Upload limit shown before the API has had a chance to state its own.
@@ -52,9 +60,12 @@ function App() {
   const auth = useAuth()
   const keyState = useApiKey()
   const library = useDocuments(auth.user?.access_token)
+  const history = useQuestionHistory(auth.user?.access_token)
   const [showHelp, setShowHelp] = useState(false)
   const [pending, setPending] = useState(false)
-  const [answer, setAnswer] = useState<AskResponse | null>(null)
+  // Either the latest answer or one brought back from history. The id ties it
+  // to a history entry so the list can mark which one is on screen.
+  const [answer, setAnswer] = useState<Shown | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   // Kept so "try again" can re-send the same question without the researcher
   // retyping it; the form clears its own state on submit.
@@ -83,7 +94,19 @@ function App() {
 
     try {
       const result = await askQuestion(question, keyState.apiKey, accessToken, controller.signal)
-      setAnswer(result)
+      setAnswer({ id: result.id, question, answer: result.answer, sources: result.sources })
+
+      // A null id means the answer arrived but could not be saved. It is still
+      // shown; it just does not join a history it is not actually part of.
+      if (result.id) {
+        history.add({
+          id: result.id,
+          question,
+          answer: result.answer,
+          sources: result.sources,
+          created_at: new Date().toISOString(),
+        })
+      }
     } catch (caught) {
       // An abort means a newer question took over, so the UI belongs to that
       // request now and this one should leave the state alone.
@@ -95,6 +118,22 @@ function App() {
         inFlight.current = null
       }
     }
+  }
+
+  function showFromHistory(entry: QuestionRecord) {
+    // Abandons any question still in flight: its answer would otherwise land
+    // afterwards and replace the one the researcher just chose to look at.
+    inFlight.current?.abort()
+    setPending(false)
+    setError(null)
+    setAnswer({ id: entry.id, question: entry.question, answer: entry.answer, sources: entry.sources })
+  }
+
+  async function removeFromHistory(questionId: string) {
+    await history.remove(questionId)
+    // Clear the panel if it was showing the entry just removed, rather than
+    // leaving something on screen the history no longer has.
+    setAnswer((current) => (current?.id === questionId ? null : current))
   }
 
   /** Clear the rejected key and put the researcher back at the key field. */
@@ -190,6 +229,20 @@ function App() {
         onSignIn={() => void auth.signinRedirect()}
       />
       <AnswerPanel pending={pending} answer={answer} />
+
+      <QuestionHistory
+        entries={history.entries}
+        selectedId={answer?.id ?? null}
+        onSelect={showFromHistory}
+        onRemove={(questionId) => void removeFromHistory(questionId)}
+      />
+      <ErrorBanner
+        error={history.error}
+        onRetry={() => void history.refresh()}
+        onUpdateKey={handleUpdateKey}
+        onOpenHelp={() => setShowHelp(true)}
+        onSignIn={() => void auth.signinRedirect()}
+      />
     </main>
   )
 }
