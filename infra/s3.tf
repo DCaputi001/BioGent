@@ -19,12 +19,21 @@ resource "aws_s3_bucket_cors_configuration" "documents" {
     # S3 itself enforce the upload size limit instead of trusting the client.
     allowed_methods = ["POST"]
 
-    # The SPA's own origin, plus the Vite dev server. Not "*": these are
-    # authenticated uploads into a researcher's own prefix, and there is no
-    # reason for another site to be able to drive one from a browser that
-    # happens to hold a valid presigned form.
+    # Every origin the app is served from -- the cloudfront.net URL, any custom
+    # domain, and the Vite dev server. Not "*": these are authenticated uploads
+    # into a researcher's own prefix, and there is no reason for another site to
+    # be able to drive one from a browser that happens to hold a valid
+    # presigned form.
+    #
+    # Bare origins only, unlike the Cognito redirect list that shares these
+    # locals: a browser's Origin header is scheme-host-port by definition and
+    # never carries a trailing slash, so the extra forms Cognito needs would be
+    # dead entries here. An origin missing from this list fails at the preflight
+    # -- the upload never starts, and the document is left waiting on bytes that
+    # never arrive.
     allowed_origins = concat(
       [local.app_origin],
+      local.custom_domain_origins,
       var.cognito_local_dev_urls,
     )
 
