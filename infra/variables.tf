@@ -166,6 +166,34 @@ variable "github_repo_immutable" {
   default     = "DCaputi001@173270718/BioGent@1359512510"
 }
 
+# --- Custom domain (optional) ---
+
+variable "custom_domain_names" {
+  description = <<-EOT
+    Alternate domain names for the CloudFront distribution, e.g.
+    ["biogent.io", "www.biogent.io"]. Requires acm_certificate_arn too --
+    CloudFront cannot serve a custom domain on its own default certificate.
+
+    Leave both this and acm_certificate_arn empty to serve only the
+    *.cloudfront.net URL, which is also what a fresh deployment gets: neither
+    has a real default, since nobody else owns this domain.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "acm_certificate_arn" {
+  description = <<-EOT
+    ACM certificate for custom_domain_names, issued in us-east-1 specifically
+    -- CloudFront only reads certificates from that region regardless of
+    where the rest of the stack runs. Must already be validated (DNS
+    validation adds a CNAME to the zone) before this is set, or the apply
+    hangs waiting on a certificate that never issues.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "create_github_oidc_provider" {
   description = "Create the GitHub OIDC provider, or reference one already in this account. AWS permits only one per URL, so set this false if another workload created it."
   type        = bool

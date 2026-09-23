@@ -1,4 +1,10 @@
-# BioGent
+<p align="center">
+  <img src="frontend/public/brand/lockup.webp" alt="BioGent" width="220">
+</p>
+
+<p align="center">
+  <a href="https://biogent.io">biogent.io</a>
+</p>
 
 A production, multi-researcher, web-based platform for scientific/taxonomic literature research — built so a non-technical researcher can search their own document collection, ask grounded questions, and eventually hand off datasets to an AI data analyst agent, all without any local setup, command line, or MCP client installation.
 
@@ -48,6 +54,7 @@ BioGent/
 ├── CONTRIBUTING.md         # branching model, conventions
 ├── CHANGELOG.md            # running log of changes
 ├── AGENTS.md               # orientation for AI coding agents working in this repo
+├── LICENSE                 # MIT, with attribution for public deployments
 └── README.md               # this file
 ```
 
@@ -81,4 +88,8 @@ Known gaps and deliberately deferred work are tracked in `KNOWN_ISSUES.md`. See 
 
 ## License
 
-Not yet decided.
+MIT, with one addition: deploying this software (or a fork of it) as a
+public-facing service requires a visible credit back to this project — plain
+MIT only requires keeping the copyright notice in copies of the source, which
+says nothing about a hosted, non-redistributed deployment. See `LICENSE` for
+the exact terms.

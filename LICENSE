@@ -1,0 +1,35 @@
+MIT License, with Attribution
+
+Copyright (c) 2026 Diego Caputi
+
+This is the standard MIT License below, with one addition (the "Attribution
+for public deployments" clause). Because of that addition, this is not the
+plain OSI-registered MIT License — automated tools that key off the license
+name should treat this file, not the term "MIT," as the actual terms.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+Attribution for public deployments: if you deploy the Software, or a
+modified version of it, as a publicly accessible service, you must include a
+visible, unobtrusive credit identifying BioGent as the origin of the
+software, with a link back to https://github.com/DCaputi001/BioGent (or its
+successor location). A line in a footer, an "About" page, or equivalent
+documentation satisfies this. This condition applies to running the
+Software as a public-facing service, in addition to the copyright-notice
+requirement above, which applies to copies of the Software itself.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.

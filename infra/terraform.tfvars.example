@@ -33,3 +33,11 @@ desired_count = 1
 # Setting this registers a new task definition revision, but the running
 # service only picks it up on the next deploy workflow run -- see infra/README.md.
 # langsmith_secret_arn = "arn:aws:secretsmanager:us-east-1:396913715360:secret:biogent/langsmith-api-key-xxxxxx"
+
+# Optional -- a custom domain for the CloudFront distribution, on top of the
+# *.cloudfront.net URL it always has. Requires a validated ACM certificate in
+# us-east-1 (CloudFront reads certificates from nowhere else), and if the
+# domain's DNS is a Route 53 zone in this account, see infra/route53.tf --
+# its alias records need `terraform import` once, documented in infra/README.md.
+# custom_domain_names = ["example.org", "www.example.org"]
+# acm_certificate_arn = "arn:aws:acm:us-east-1:396913715360:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

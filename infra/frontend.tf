@@ -75,6 +75,10 @@ resource "aws_cloudfront_distribution" "main" {
   comment             = "${var.project} web app and API"
   price_class         = "PriceClass_100"
 
+  # Empty by default -- see variables.tf. A fresh deployment serves only the
+  # *.cloudfront.net URL; this account's real values live in terraform.tfvars.
+  aliases = var.custom_domain_names
+
   origin {
     origin_id                = "s3-frontend"
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
@@ -143,7 +147,23 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  viewer_certificate {
-    cloudfront_default_certificate = true
+  # Two complementary dynamic blocks rather than one conditional block:
+  # viewer_certificate demands exactly one of three mutually-exclusive
+  # attributes, which a single block cannot express as "either shape
+  # depending on the variable." Exactly one of these ever renders.
+  dynamic "viewer_certificate" {
+    for_each = var.acm_certificate_arn != "" ? [1] : []
+    content {
+      acm_certificate_arn      = var.acm_certificate_arn
+      ssl_support_method       = "sni-only"
+      minimum_protocol_version = "TLSv1.2_2021"
+    }
+  }
+
+  dynamic "viewer_certificate" {
+    for_each = var.acm_certificate_arn == "" ? [1] : []
+    content {
+      cloudfront_default_certificate = true
+    }
   }
 }

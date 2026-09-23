@@ -246,6 +246,47 @@ Until then: apply the migration, confirm it, then deploy.
 Reaching RDS from a workstation needs your IP on the RDS security group, the
 same rule that lets `app.ingest` run locally.
 
+## Custom domain
+
+`biogent.io` and `www.biogent.io` were set up directly in the AWS console
+(CloudFront aliases, a validated ACM certificate, and the two Cognito
+callback/logout URLs) before this was brought into Terraform, so bringing it
+in meant reconciling state to already-live reality rather than provisioning
+something new.
+
+Both `custom_domain_names` and `acm_certificate_arn` default to empty, so a
+fresh clone of this repo deploys with only the `*.cloudfront.net` URL and
+inherits nothing about this domain. To point a fresh deployment at a domain
+you own instead:
+
+1. Request and validate an ACM certificate **in us-east-1** for it — CloudFront
+   reads certificates from nowhere else, regardless of which region the rest
+   of the stack runs in.
+2. Set `custom_domain_names` and `acm_certificate_arn` in `terraform.tfvars`.
+3. If the domain's DNS is a Route 53 hosted zone in this account,
+   `infra/route53.tf` manages its alias records — but only as a `data` source
+   plus the specific records this app owns, never the zone itself, since
+   destroying that would take the domain's nameserver delegation with it. A
+   zone Route 53 Registrar created automatically (buying the domain through
+   AWS) already has one; point `data.aws_route53_zone.biogent`'s `name` at it.
+4. `terraform apply`.
+
+If the DNS records already exist (as `biogent.io`'s did, from the console
+setup), `apply` alone tries to *create* them and fails on Route 53's "already
+exists" error. Import them first — once per record, using the format
+`ZONEID_recordname_TYPE`:
+
+```powershell
+terraform import 'aws_route53_record.apex["biogent.io"]' Z0713174912H8BTJHQUB_biogent.io_A
+terraform import 'aws_route53_record.apex_ipv6["biogent.io"]' Z0713174912H8BTJHQUB_biogent.io_AAAA
+terraform import 'aws_route53_record.apex["www.biogent.io"]' Z0713174912H8BTJHQUB_www.biogent.io_A
+terraform import 'aws_route53_record.apex_ipv6["www.biogent.io"]' Z0713174912H8BTJHQUB_www.biogent.io_AAAA
+```
+
+A `terraform plan` showing changes to these records right after import means
+the alias block doesn't match what is actually live — worth a second look
+before applying, not just clicking through it.
+
 ## Cost
 
 Roughly **$50-60/month** on top of RDS: ALB ~$17, Fargate (1 vCPU / 4 GB,
