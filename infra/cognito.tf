@@ -7,14 +7,17 @@
 # is not just a login, it is the identity the stored data is keyed on.
 
 locals {
-  app_origin = "https://${aws_cloudfront_distribution.main.domain_name}"
+  app_origin            = "https://${aws_cloudfront_distribution.main.domain_name}"
+  custom_domain_origins = [for d in var.custom_domain_names : "https://${d}"]
 
-  # Both the bare origin and the trailing-slash form. Cognito matches a
-  # redirect_uri exactly, and whether a SPA's origin carries a trailing slash
-  # depends on how the client derives it -- allowing both turns a silent
+  # Both the bare origin and the trailing-slash form, for the cloudfront.net
+  # origin and every custom domain alike. Cognito matches a redirect_uri
+  # exactly, and whether a SPA's origin carries a trailing slash depends on
+  # how the client derives it -- allowing both turns a silent
   # "redirect_mismatch" error page into a non-issue.
   cognito_redirect_urls = concat(
     [local.app_origin, "${local.app_origin}/"],
+    flatten([for origin in local.custom_domain_origins : [origin, "${origin}/"]]),
     var.cognito_local_dev_urls,
   )
 }
